@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NiiVue Viewer with Controls</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      padding: 10px;
+      background-color: #f0f0f0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <label for="fiberRadius">Radius</label>
+    <input type="range" min="0" max="20" value="5" class="slider" id="fiberRadius" />
+    
+    <label for="fiberDitherSlider">Dither</label>
+    <input type="range" min="0" max="10" value="0" class="slider" id="fiberDitherSlider" />
+    
+    <label for="fiberColor">Fiber color</label>
+    <select id="fiberColor">
+      <option value="Global">Global direction</option>
+      <option value="Local">Local direction</option>
+      <option value="Fixed">Fixed</option>
+      <option value="DPV0" selected>First Per Vertex Type (if available)</option>
+    </select>
+    
+    <label for="fiberColormap">Colormap</label>
+    <select id="fiberColormap">
+      <option value="actc">ACTC</option>
+      <option value="inferno" selected>Inferno</option>
+      <option value="plasma">Plasma</option>
+      <option value="warm">Warm</option>
+      <option value="winter">Winter</option>
+    </select>
+    
+    <label for="fiberCalMin">Color Minimum</label>
+    <input type="range" min="10" max="75" value="25" class="slider" id="fiberCalMin" />
+    
+    <label for="layoutSelect">Layout</label>
+    <select id="layoutSelect">
+      <option value="0" selected>Auto</option>
+      <option value="1">Column</option>
+      <option value="2">Grid</option>
+      <option value="3">Row</option>
+    </select>
+    
+    <label for="renderingSelect">Rendering</label>
+    <select id="renderingSelect">
+      <option value="0">Never</option>
+      <option value="1">Always</option>
+      <option value="2" selected>Auto</option>
+    </select>
+    
+    <label for="equalCheck">EqualSize</label>
+    <input type="checkbox" id="equalCheck" checked />
+    <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+  </header>
+  <main id="canvas-container">
+    <canvas id="gl1"></canvas>
+  </main>
+  <footer>
+    <label id="shaders">Shaders: </label>
+  </footer>
+
+  <!-- Your bundled JavaScript file -->
+  <script type="module" src="index.js" async></script>
+</body>
+</html>

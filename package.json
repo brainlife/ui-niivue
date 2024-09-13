@@ -1,0 +1,26 @@
+{
+  "name": "ui-niivue",
+  "version": "1.0.0",
+  "description": "niivue visualizer ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "wds --node-resolve --open --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brainlife/ui-niivue.git"
+  },
+  "author": "Dheeraj Bhatia",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/brainlife/ui-niivue/issues"
+  },
+  "homepage": "https://github.com/brainlife/ui-niivue#readme",
+  "dependencies": {
+    "@niivue/niivue": "^0.44.2"
+  },
+  "devDependencies": {
+    "@web/dev-server": "^0.4.6"
+  }
+}
