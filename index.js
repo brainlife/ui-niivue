@@ -1,4 +1,4 @@
-import * as niivue from "../dist/index.js";
+import * as niivue from "./dist/index.js";
 // import { Niivue } from "@niivue/niivue";
 
 let config = window.parent.config || window.config;
