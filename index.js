@@ -37,7 +37,7 @@ const nv1 = new niivue.Niivue({
 
 nv1.attachTo("gl1");
 
-if (config.datatype === "neuro/tcks") {
+if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
   // nifti.vue enumerates every .tck file and passes a colored mesh per file
   const meshes = config.meshes || [];
   nv1.loadMeshes(meshes)
