@@ -24,10 +24,71 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      position: relative;
     }
     canvas {
       width: 100%;
       height: 100%;
+    }
+    /* Tract selector sidebar (only shown for .tck tractograms) */
+    #tractPanel {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 260px;
+      max-height: 100%;
+      overflow-y: auto;
+      background: rgba(255, 255, 255, 0.92);
+      border-right: 1px solid #ccc;
+      box-sizing: border-box;
+      padding: 8px;
+      font-size: 12px;
+      z-index: 10;
+    }
+    #tractPanel h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+    }
+    #tractPanel .tract-actions {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    #tractPanel .tract-actions button {
+      flex: 1;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 4px;
+    }
+    #tractSummary {
+      color: #555;
+      margin-bottom: 6px;
+      font-size: 11px;
+    }
+    .tract-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 0;
+      cursor: pointer;
+    }
+    .tract-swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+    .tract-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tract-size {
+      color: #888;
+      flex: 0 0 auto;
     }
   </style>
 </head>
@@ -85,8 +146,18 @@
       </select>
   </header>
   <main id="canvas-container">
+    <aside id="tractPanel">
+      <h4>Tracts</h4>
+      <div class="tract-actions">
+        <button type="button" id="tractSelectAll">Select all</button>
+        <button type="button" id="tractClearAll">Clear all</button>
+      </div>
+      <div id="tractSummary"></div>
+      <div id="tractList"></div>
+    </aside>
     <canvas id="gl1"></canvas>
   </main>
+
   <footer>
     <label id="shaders">Shaders: </label>
   </footer>
