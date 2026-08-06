@@ -15,9 +15,12 @@ drop.onchange = function () {
   nv1.setSliceType(st);
 }
 
+// Tracts render as light streamlines by default (matching brainlife-lite); only
+// switch to the heavier tube/colormap rendering once the user touches a slider.
+let fiberControlsTouched = false;
+
 function handleIntensityChange(data) {
   document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
-  console.log(data);
 }
 
 const volumeList1 = [
@@ -97,7 +100,10 @@ function setupTractSelector(meshes, budgetBytes) {
         url: spec.url, name: spec.name, rgba255: spec.rgba255,
       });
       if (added) loaded.set(spec.url, added.id);
-      applyFiberControlsTo(added);
+      // Only apply fiber controls once the user has moved a slider off its
+      // default; forcing fiberRadius>0 up front renders every streamline as a
+      // tube (heavy geometry) and hangs the page for large tractograms.
+      if (fiberControlsTouched) applyFiberControlsTo(added);
     } catch (err) {
       console.error("Error loading tract", spec.name, err);
       if (spec._checkbox) spec._checkbox.checked = false;
@@ -257,7 +263,10 @@ function applyFiberControlsTo(mesh) {
 
 // wire up the fiber (.tck) display controls already present in index.html
 function setupFiberControls() {
-  const applyAll = (key, val) => nv1.meshes.forEach(m => nv1.setMeshProperty(m.id, key, val));
+  const applyAll = (key, val) => {
+    fiberControlsTouched = true;
+    nv1.meshes.forEach(m => nv1.setMeshProperty(m.id, key, val));
+  };
 
   const radius = document.getElementById("fiberRadius");
   if (radius) radius.oninput = () => applyAll("fiberRadius", radius.value / 10);
