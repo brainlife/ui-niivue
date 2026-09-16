@@ -1,4 +1,5 @@
 import * as niivue from "./dist/index.js";
+import { volumeOptions } from "./volume-config.js";
 // import { Niivue } from "@niivue/niivue";
 
 let config = window.parent.config || window.config;
@@ -23,22 +24,16 @@ function handleIntensityChange(data) {
   document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
 }
 
-const volumeList1 = [
-  { 
-    url: config.path, // Use the dynamic path from the config object
-    colormap: "gray",
-    visible: true,
-  }, 
-];
-
 const nv1 = new niivue.Niivue({
   dragAndDropEnabled: true,
+  isNearestInterpolation: config.datatype === "neuro/mask",
   onLocationChange: handleIntensityChange, 
   isRuler: true, 
   show3Dcrosshair: true, 
 });
 
-nv1.attachTo("gl1");
+async function initializeViewer() {
+await nv1.attachTo("gl1");
 
 if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
   // nifti.vue enumerates every .tck file and passes a colored mesh per file.
@@ -50,12 +45,18 @@ if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
   setupTractSelector(config.meshes || [], config.tckBudgetBytes || 0);
   setupFiberControls();
 } else {
-  nv1.loadVolumes(volumeList1).then(() => {
-    nv1.setSliceType(nv1.sliceTypeMultiplanar);
-  }).catch((error) => {
-    console.error("Error loading volumes:", error);
-  });
+  await nv1.loadVolumes([volumeOptions(config)]);
+  nv1.setSliceType(nv1.sliceTypeMultiplanar);
 }
+
+}
+initializeViewer().catch(error => {
+  console.error("Error loading viewer:", error);
+  const message = document.createElement("div");
+  message.setAttribute("role", "alert");
+  message.textContent = "Unable to load image: " + error.message;
+  document.body.prepend(message);
+});
 
 // Build a checklist of tract bundles and load/unload them on demand so the
 // browser only ever holds the geometry the user has selected. Works for any
