@@ -4,7 +4,7 @@
   "description": "niivue visualizer ",
   "main": "index.js",
   "scripts": {
-    "test": "node --test volume-config.test.mjs",
+    "test": "node --test volume-config.test.mjs csd-glyphs.test.mjs",
     "start": "wds --node-resolve --open --watch"
   },
   "repository": {

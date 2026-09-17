@@ -1,5 +1,6 @@
 import * as niivue from "./dist/index.js";
 import { volumeOptions } from "./volume-config.js";
+import { attachCsdOverlay } from "./csd-overlay.js";
 // import { Niivue } from "@niivue/niivue";
 
 let config = window.parent.config || window.config;
@@ -21,7 +22,8 @@ drop.onchange = function () {
 let fiberControlsTouched = false;
 
 function handleIntensityChange(data) {
-  document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
+  const label = document.getElementById("intensity");
+  if (label) label.textContent = "  " + data.string;
 }
 
 const nv1 = new niivue.Niivue({
@@ -47,6 +49,9 @@ if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
 } else {
   await nv1.loadVolumes([volumeOptions(config)]);
   nv1.setSliceType(nv1.sliceTypeMultiplanar);
+  if (config.datatype === "neuro/csd") {
+    attachCsdOverlay(nv1, niivue.NVMesh, nv1.volumes[0]);
+  }
 }
 
 }
