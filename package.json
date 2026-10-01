@@ -4,8 +4,10 @@
   "description": "niivue visualizer ",
   "main": "index.js",
   "scripts": {
-    "test": "node --test volume-config.test.mjs csd-glyphs.test.mjs",
-    "start": "wds --node-resolve --open --watch"
+    "test": "node --test *.test.mjs",
+    "start": "wds --node-resolve --open --watch",
+    "build": "node build.mjs",
+    "test:browser": "playwright test"
   },
   "repository": {
     "type": "git",
@@ -18,9 +20,11 @@
   },
   "homepage": "https://github.com/brainlife/ui-niivue#readme",
   "dependencies": {
-    "@niivue/niivue": "^0.64.0"
+    "@niivue/niivue": "1.0.0-rc.16"
   },
   "devDependencies": {
-    "@web/dev-server": "^0.4.6"
+    "@playwright/test": "^1.63.0",
+    "@web/dev-server": "^0.4.6",
+    "esbuild": "^0.28.2"
   }
 }

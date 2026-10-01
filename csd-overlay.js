@@ -1,6 +1,7 @@
+import { glyphMeshFile } from "./csd-mesh.js";
 import { createCsdSampler, buildGlyphs } from "./csd-glyphs.js";
 
-export function attachCsdOverlay(nv, NVMesh, volume) {
+export function attachCsdOverlay(nv, meshLoader, volume) {
   const sampler = createCsdSampler(volume);
   const controls = document.createElement("span");
   controls.id = "csd-controls";
@@ -16,22 +17,22 @@ export function attachCsdOverlay(nv, NVMesh, volume) {
     timer,
     mesh,
     lastKey = "";
-  const clear = () => {
+  const clear = async () => {
     if (mesh) {
       const old = mesh;
       mesh = null;
-      nv.removeMesh(old);
+      await meshLoader.remove(old);
     }
   };
   const request = () => {
-    const crosshair = Array.from(nv.frac2mm(nv.scene.crosshairPos)).slice(0, 3);
+    const crosshair = nv.getCrosshairPos();
     const key = JSON.stringify([crosshair, visible.checked, size.value]);
     if (key === lastKey) return;
     lastKey = key;
     const current = ++generation;
     clearTimeout(timer);
     if (!visible.checked) {
-      clear();
+      void clear().catch(error => { status.textContent = error.message; });
       status.textContent = "";
       return;
     }
@@ -43,20 +44,20 @@ export function attachCsdOverlay(nv, NVMesh, volume) {
           cancelled: () => current !== generation,
         });
         if (!geometry || current !== generation) return;
-        clear();
+        await clear();
+        if (current !== generation) return;
         if (geometry.glyphs) {
-          mesh = new NVMesh(
-            geometry.positions,
-            geometry.triangles,
-            "CSD orientation glyphs",
-            geometry.colors,
-            1,
-            true,
-            nv.gl,
-          );
-          mesh.colorbarVisible = false;
-          nv.setMeshThicknessOn2D(geometry.step * 0.5);
-          nv.addMesh(mesh);
+          const added = await meshLoader.add({
+            url: glyphMeshFile(geometry),
+            name: "CSD orientation glyphs",
+            isColorbarVisible: false,
+          });
+          if (current !== generation) {
+            await meshLoader.remove(added);
+            return;
+          }
+          mesh = added;
+          nv.meshThicknessOn2D = geometry.step * 0.5;
         }
         status.textContent = geometry.glyphs
           ? `${geometry.glyphs} glyphs`
@@ -68,19 +69,15 @@ export function attachCsdOverlay(nv, NVMesh, volume) {
   };
   visible.addEventListener("change", request);
   size.addEventListener("input", request);
-  const previous = nv.onLocationChange;
-  nv.onLocationChange = (data) => {
-    previous(data);
-    request();
-  };
+  nv.addEventListener("locationChange", request);
   request();
   return {
     refresh: request,
-    dispose() {
+    async dispose() {
       generation++;
       clearTimeout(timer);
-      nv.onLocationChange = previous;
-      clear();
+      nv.removeEventListener("locationChange", request);
+      await clear();
       controls.remove();
     },
   };

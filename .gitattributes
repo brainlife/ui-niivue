@@ -1,0 +1,2 @@
+# Generated bundle includes upstream GLSL/WGSL strings with intentional whitespace.
+dist/index.js -whitespace linguist-generated=true

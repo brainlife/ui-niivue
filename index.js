@@ -1,24 +1,23 @@
 import * as niivue from "./dist/index.js";
 import { volumeOptions } from "./volume-config.js";
 import { attachCsdOverlay } from "./csd-overlay.js";
-// import { Niivue } from "@niivue/niivue";
+import { createMeshLoader } from "./mesh-loader.js";
 
 let config = window.parent.config || window.config;
 if (!config) {
   console.log("Config not set.. using debug config");
   config = {
-    path: "../images/mni152.nii.gz", 
+    path: "../images/mni152.nii.gz",
   };
 }
 
 const drop = document.getElementById("sliceType");
 drop.onchange = function () {
   const st = parseInt(document.getElementById("sliceType").value);
-  nv1.setSliceType(st);
+  nv1.sliceType = st;
 }
 
-// Tracts render as light streamlines by default (matching brainlife-lite); only
-// switch to the heavier tube/colormap rendering once the user touches a slider.
+// rc.16 renders tracts as tubes; start with thin, three-sided geometry.
 let fiberControlsTouched = false;
 
 function handleIntensityChange(data) {
@@ -26,13 +25,22 @@ function handleIntensityChange(data) {
   if (label) label.textContent = "  " + data.string;
 }
 
-const nv1 = new niivue.Niivue({
-  dragAndDropEnabled: true,
-  isNearestInterpolation: config.datatype === "neuro/mask",
-  onLocationChange: handleIntensityChange, 
-  isRuler: true, 
-  show3Dcrosshair: true, 
+const nv1 = new niivue.NiiVue({
+  backend: "webgl2",
+  isDragDropEnabled: true,
+  volumeIsNearestInterpolation: config.datatype === "neuro/mask",
+  isRulerVisible: true,
+  is3DCrosshairVisible: true,
 });
+
+nv1.addEventListener("locationChange", event => handleIntensityChange(event.detail));
+const meshLoader = createMeshLoader(nv1);
+let csdOverlay;
+window.addEventListener("pagehide", async () => {
+  await csdOverlay?.dispose();
+  await meshLoader.settled();
+  nv1.destroy();
+}, { once: true });
 
 async function initializeViewer() {
 await nv1.attachTo("gl1");
@@ -43,14 +51,14 @@ if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
   // loading every bundle into WebGL memory OOMs the browser. Instead we render
   // a selectable list and lazily load/unload each bundle on demand, auto-loading
   // only a subset that fits within config.tckBudgetBytes.
-  nv1.setSliceType(nv1.sliceTypeMultiplanar);
+  nv1.sliceType = niivue.SLICE_TYPE.MULTIPLANAR;
   setupTractSelector(config.meshes || [], config.tckBudgetBytes || 0);
   setupFiberControls();
 } else {
   await nv1.loadVolumes([volumeOptions(config)]);
-  nv1.setSliceType(nv1.sliceTypeMultiplanar);
+  nv1.sliceType = niivue.SLICE_TYPE.MULTIPLANAR;
   if (config.datatype === "neuro/csd") {
-    attachCsdOverlay(nv1, niivue.NVMesh, nv1.volumes[0]);
+    csdOverlay = attachCsdOverlay(nv1, meshLoader, nv1.volumes[0]);
   }
 }
 
@@ -76,8 +84,8 @@ function setupTractSelector(meshes, budgetBytes) {
   const panel = ui.panel, list = ui.list, summary = ui.summary;
   panel.style.display = "block";
 
-  // map a mesh spec -> the loaded NVMesh id (null when not loaded)
-  const loaded = new Map();        // meshSpec.url -> NVMesh.id
+  // Map source URLs to mesh objects; indices change whenever a mesh is removed.
+  const loaded = new Map();        // meshSpec.url -> mesh
   const inflight = new Set();       // urls currently loading (prevents double clicks)
   const fmtSize = b => (b == null) ? "" :
     (b >= 1024*1024*1024 ? (b/1024/1024/1024).toFixed(1)+" GB"
@@ -99,17 +107,21 @@ function setupTractSelector(meshes, budgetBytes) {
     if (loaded.has(spec.url) || inflight.has(spec.url)) return;
     inflight.add(spec.url);
     try {
-      // addMeshFromUrl appends a single mesh and returns it WITHOUT clearing the
-      // existing meshes (unlike loadMeshes, which resets nv1.meshes first).
-      // Pass only the fields niivue expects - never the _checkbox DOM node.
-      const added = await nv1.addMeshFromUrl({
-        url: spec.url, name: spec.name, rgba255: spec.rgba255,
+      const added = await meshLoader.add({
+        url: spec.url, name: spec.name,
+        tractOptions: {
+          fiberRadius: 0.1, fiberSides: 3,
+          ...(spec.rgba255 ? { colorBy: "fixed", fixedColor: spec.rgba255 } : {}),
+        },
       });
-      if (added) loaded.set(spec.url, added.id);
-      // Only apply fiber controls once the user has moved a slider off its
-      // default; forcing fiberRadius>0 up front renders every streamline as a
-      // tube (heavy geometry) and hangs the page for large tractograms.
-      if (fiberControlsTouched) applyFiberControlsTo(added);
+      // Clear/uncheck during a fetch must also remove the eventual result.
+      if (!spec._checkbox.checked) {
+        await meshLoader.remove(added);
+        return;
+      }
+      loaded.set(spec.url, added);
+      // Preserve bundle colors until the user changes the tract controls.
+      if (fiberControlsTouched) await applyFiberControlsTo(added);
     } catch (err) {
       console.error("Error loading tract", spec.name, err);
       if (spec._checkbox) spec._checkbox.checked = false;
@@ -119,12 +131,12 @@ function setupTractSelector(meshes, budgetBytes) {
     }
   }
 
-  function unloadOne(spec) {
-    const id = loaded.get(spec.url);
-    if (id == null) return;
-    const mesh = nv1.meshes.find(m => m.id === id);
-    if (mesh) nv1.removeMesh(mesh);
+  async function unloadOne(spec) {
+    const mesh = loaded.get(spec.url);
+    if (!mesh) return;
     loaded.delete(spec.url);
+    try { await meshLoader.remove(mesh); }
+    catch (error) { console.error("Unable to remove tract:", error); }
     updateSummary();
   }
 
@@ -173,7 +185,7 @@ function setupTractSelector(meshes, budgetBytes) {
     meshes.forEach(spec => { if (!loaded.has(spec.url)) { spec._checkbox.checked = true; loadOne(spec); } });
   };
   if (clrAll) clrAll.onclick = () =>
-    meshes.forEach(spec => { if (loaded.has(spec.url)) { spec._checkbox.checked = false; unloadOne(spec); } });
+    meshes.forEach(spec => { spec._checkbox.checked = false; void unloadOne(spec); });
 
   // kick off the auto-load subset sequentially (avoids hammering the network /
   // WebGL with many concurrent mesh uploads)
@@ -255,37 +267,35 @@ function injectTractStyles() {
   document.head.appendChild(style);
 }
 
-// apply the current fiber control values to a single mesh (used when a tract is
-// lazily added after the controls were already set).
-function applyFiberControlsTo(mesh) {
-  if (!mesh) return;
-  const radius = document.getElementById("fiberRadius");
-  if (radius) nv1.setMeshProperty(mesh.id, "fiberRadius", radius.value / 10);
-  const dither = document.getElementById("fiberDitherSlider");
-  if (dither) nv1.setMeshProperty(mesh.id, "fiberDither", dither.value / 10);
-  const color = document.getElementById("fiberColor");
-  if (color) nv1.setMeshProperty(mesh.id, "fiberColor", color.value);
+// New tract controls use typed options and the mesh's current index.
+async function applyFiberControlsTo(mesh) {
+  const index = nv1.meshes.indexOf(mesh);
+  if (index < 0) return;
+  const mode = document.getElementById("fiberColor").value;
+  const scalar = Object.keys(mesh.trx?.dpv || {})[0];
+  await nv1.setTractOptions(index, {
+    fiberRadius: Number(document.getElementById("fiberRadius").value) / 10,
+    fiberSides: 3,
+    decimation: Number(document.getElementById("fiberDecimation").value),
+    colorBy: mode === "Global" ? "global" : mode === "Fixed" ? "fixed" :
+      mode === "DPV0" && scalar ? `dpv:${scalar}` : "",
+    colormap: document.getElementById("fiberColormap").value,
+    calMin: Number(document.getElementById("fiberCalMin").value),
+  });
 }
 
-// wire up the fiber (.tck) display controls already present in index.html
 function setupFiberControls() {
-  const applyAll = (key, val) => {
+  const apply = async () => {
     fiberControlsTouched = true;
-    nv1.meshes.forEach(m => nv1.setMeshProperty(m.id, key, val));
+    try {
+      for (const mesh of nv1.meshes.slice()) await applyFiberControlsTo(mesh);
+    } catch (error) { console.error("Unable to update tracts:", error); }
   };
-
-  const radius = document.getElementById("fiberRadius");
-  if (radius) radius.oninput = () => applyAll("fiberRadius", radius.value / 10);
-
-  const dither = document.getElementById("fiberDitherSlider");
-  if (dither) dither.oninput = () => applyAll("fiberDither", dither.value / 10);
-
-  const color = document.getElementById("fiberColor");
-  if (color) color.onchange = () => applyAll("fiberColor", color.value);
-
-  const colormap = document.getElementById("fiberColormap");
-  if (colormap) colormap.onchange = () => applyAll("colormap", colormap.value);
-
-  const calMin = document.getElementById("fiberCalMin");
-  if (calMin) calMin.oninput = () => applyAll("fiberLength", parseFloat(calMin.value));
+  for (const id of ["fiberRadius", "fiberDecimation", "fiberColor", "fiberColormap", "fiberCalMin"])
+    document.getElementById(id).onchange = apply;
 }
+
+// These controls map directly to the new reactive viewer properties.
+document.getElementById("layoutSelect").onchange = event => { nv1.multiplanarType = Number(event.target.value); };
+document.getElementById("renderingSelect").onchange = event => { nv1.showRender = Number(event.target.value); };
+document.getElementById("equalCheck").onchange = event => { nv1.isEqualSize = event.target.checked; };
