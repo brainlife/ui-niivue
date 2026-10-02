@@ -13,9 +13,11 @@ if (!config) {
 
 const drop = document.getElementById("sliceType");
 drop.onchange = function () {
-  const st = parseInt(document.getElementById("sliceType").value);
-  nv1.sliceType = st;
-}
+  const mode = drop.value;
+  nv1.showRender = mode === "slices" ? niivue.SHOW_RENDER.NEVER : niivue.SHOW_RENDER.ALWAYS;
+  nv1.sliceType = mode === "3d" ? niivue.SLICE_TYPE.RENDER : niivue.SLICE_TYPE.MULTIPLANAR;
+  nv1.resize();
+};
 
 // rc.16 renders tracts as tubes; start with thin, three-sided geometry.
 let fiberControlsTouched = false;
@@ -27,6 +29,8 @@ function handleIntensityChange(data) {
 
 const nv1 = new niivue.NiiVue({
   backend: "webgl2",
+  sliceType: niivue.SLICE_TYPE.RENDER,
+  showRender: niivue.SHOW_RENDER.ALWAYS,
   isDragDropEnabled: true,
   volumeIsNearestInterpolation: config.datatype === "neuro/mask",
   isRulerVisible: true,
@@ -51,12 +55,10 @@ if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
   // loading every bundle into WebGL memory OOMs the browser. Instead we render
   // a selectable list and lazily load/unload each bundle on demand, auto-loading
   // only a subset that fits within config.tckBudgetBytes.
-  nv1.sliceType = niivue.SLICE_TYPE.MULTIPLANAR;
   setupTractSelector(config.meshes || [], config.tckBudgetBytes || 0);
   setupFiberControls();
 } else {
   await nv1.loadVolumes([volumeOptions(config)]);
-  nv1.sliceType = niivue.SLICE_TYPE.MULTIPLANAR;
   if (config.datatype === "neuro/csd") {
     csdOverlay = attachCsdOverlay(nv1, meshLoader, nv1.volumes[0]);
   }
@@ -76,6 +78,11 @@ initializeViewer().catch(error => {
 // storage backend (osiris/local staged task, s3fs, or pub) because each bundle
 // is just a URL fetched when toggled on.
 function setupTractSelector(meshes, budgetBytes) {
+  meshes = meshes.map((spec, index) => {
+    const hue = index * 137.508 * Math.PI / 180;
+    const color = [0, 2 * Math.PI / 3, 4 * Math.PI / 3].map(phase => Math.round(145 + 100 * Math.cos(hue + phase)));
+    return { ...spec, rgba255: meshes.length > 1 ? spec.rgba255 || [...color, 255] : undefined };
+  });
   // Build (or reuse) the selector UI. We create it in JS rather than relying on
   // markup in index.html so a stale/cached index.html can never make us fall
   // back to loading every tract at once (which OOMs and crashes the tab for
@@ -297,5 +304,4 @@ function setupFiberControls() {
 
 // These controls map directly to the new reactive viewer properties.
 document.getElementById("layoutSelect").onchange = event => { nv1.multiplanarType = Number(event.target.value); };
-document.getElementById("renderingSelect").onchange = event => { nv1.showRender = Number(event.target.value); };
 document.getElementById("equalCheck").onchange = event => { nv1.isEqualSize = event.target.checked; };

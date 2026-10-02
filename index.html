@@ -128,22 +128,14 @@
       <option value="3">Row</option>
     </select>
     
-    <label for="renderingSelect">Rendering</label>
-    <select id="renderingSelect">
-      <option value="0">Never</option>
-      <option value="1">Always</option>
-      <option value="2" selected>Auto</option>
-    </select>
-    
     <label for="equalCheck">EqualSize</label>
     <input type="checkbox" id="equalCheck" checked />
+    <label for="sliceType">View</label>
     <select id="sliceType">
-        <option value="0">Axial</option>
-        <option value="1">Coronal</option>
-        <option value="2">Sagittal</option>
-        <option value="4">Render</option>
-        <option value="3" selected>A+C+S+R</option>
-      </select>
+      <option value="3d" selected>3D only</option>
+      <option value="combined">Slices + 3D</option>
+      <option value="slices">Slices only</option>
+    </select>
   </header>
   <main id="canvas-container">
     <aside id="tractPanel">

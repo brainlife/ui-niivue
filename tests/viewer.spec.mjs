@@ -44,11 +44,13 @@ test('mask loads, uses nearest interpolation, and view controls work', async ({ 
   const errors = await openViewer(page, { datatype: 'neuro/mask', path: '/fixture/mask.nii', name: 'mask.nii' });
   await expect.poll(() => page.evaluate(() => window.testViewer?.volumes.length)).toBe(1);
   expect(await page.evaluate(() => window.testViewer.volumeIsNearestInterpolation)).toBe(true);
-  await page.selectOption('#sliceType', '0');
+  expect(await page.evaluate(() => window.testViewer.sliceType)).toBe(4);
+  await page.selectOption('#sliceType', 'slices');
+  expect(await page.evaluate(() => [window.testViewer.sliceType, window.testViewer.showRender])).toEqual([3,0]);
+  await page.selectOption('#sliceType', 'combined');
   await page.selectOption('#layoutSelect', '2');
-  await page.selectOption('#renderingSelect', '1');
   await page.uncheck('#equalCheck');
-  expect(await page.evaluate(() => { const n = window.testViewer; return [n.sliceType,n.multiplanarType,n.showRender,n.isEqualSize]; })).toEqual([0,2,1,false]);
+  expect(await page.evaluate(() => { const n = window.testViewer; return [n.sliceType,n.multiplanarType,n.showRender,n.isEqualSize]; })).toEqual([3,2,1,false]);
   await expect(page.locator('[role=alert]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -62,6 +64,7 @@ test('tract removal resolves shifting indices and radius stays visible', async (
   await page.locator('.tract-row').filter({ hasText: 'right' }).locator('input').check();
   await expect(page.locator('#tractSummary')).toContainText('2 / 2');
   expect(await page.evaluate(() => window.testViewer.meshes.every(m => m.positions.length > 0 && m.tractOptions.fiberRadius > 0))).toBe(true);
+  expect(await page.evaluate(() => window.testViewer.meshes.map(m => m.tractOptions.colorBy))).toEqual(['fixed', 'fixed']);
   await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
   await expect.poll(() => page.evaluate(() => window.testViewer.meshes.map(m => m.name))).toEqual(['right']);
   await page.locator('#fiberRadius').fill('5');
@@ -112,4 +115,14 @@ test('bundled OME-Zarr loader reads a small multiscale store', async ({ page }) 
   // not assert mm conversion or LINC-specific spatial registration.
   expect(result.spacing).toEqual([1,1,1]);
   expect(result.range).toEqual([0,7]);
+});
+
+
+test('single tract ignores a supplied fixed color', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [
+    { url: '/fixture/left.tck', name: 'left', rgba255: [255,0,0,255] },
+  ] });
+  await expect(page.locator('#tractSummary')).toContainText('1 / 1');
+  expect(await page.evaluate(() => window.testViewer.meshes[0].tractOptions.colorBy)).not.toBe('fixed');
+  expect(errors).toEqual([]);
 });
