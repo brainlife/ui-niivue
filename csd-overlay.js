@@ -3,6 +3,8 @@ import { createCsdSampler, buildGlyphs } from "./csd-glyphs.js";
 
 export function attachCsdOverlay(nv, meshLoader, volume) {
   const sampler = createCsdSampler(volume);
+  // Keep the slice-plane glyphs visible inside the opaque 3D background.
+  nv.meshXRay = 1;
   const controls = document.createElement("span");
   controls.id = "csd-controls";
   controls.innerHTML =
