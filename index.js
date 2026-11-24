@@ -2,14 +2,9 @@ import * as niivue from "./dist/index.js";
 import { volumeOptions } from "./volume-config.js";
 import { attachCsdOverlay } from "./csd-overlay.js";
 import { createMeshLoader } from "./mesh-loader.js";
+import { receiveConfig } from "./config-channel.js";
 
-let config = window.parent.config || window.config;
-if (!config) {
-  console.log("Config not set.. using debug config");
-  config = {
-    path: "../images/mni152.nii.gz",
-  };
-}
+const debugConfig = { path: "../images/mni152.nii.gz" };
 
 const drop = document.getElementById("sliceType");
 drop.onchange = function () {
@@ -32,7 +27,6 @@ const nv1 = new niivue.NiiVue({
   sliceType: niivue.SLICE_TYPE.RENDER,
   showRender: niivue.SHOW_RENDER.ALWAYS,
   isDragDropEnabled: true,
-  volumeIsNearestInterpolation: config.datatype === "neuro/mask",
   isRulerVisible: true,
   is3DCrosshairVisible: true,
 });
@@ -47,6 +41,10 @@ window.addEventListener("pagehide", async () => {
 }, { once: true });
 
 async function initializeViewer() {
+const received = await receiveConfig(window);
+if (!received) console.log("Config not set.. using debug config");
+const config = received || debugConfig;
+nv1.volumeIsNearestInterpolation = config.datatype === "neuro/mask";
 await nv1.attachTo("gl1");
 
 if (config.datatype === "neuro/tcks" || config.datatype === "neuro/track/tck") {
