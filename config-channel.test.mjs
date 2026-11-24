@@ -51,9 +51,9 @@ test('a cross-origin parent falls back to a message from an allowed origin', asy
   const win = fakeWin({ parent });
   const p = receiveConfig(win, { timeoutMs: 1000 });
   assert.deepEqual(parent.posted.map(x => x.msg), [{ type: 'niivue-ready' }]);
-  win.dispatch({ origin: 'https://evil.example', data: { type: 'niivue-config', config: { path: 'evil' } } });
-  win.dispatch({ origin: 'https://lite.brainlife.io', data: { type: 'other', config: { path: 'x' } } });
-  win.dispatch({ origin: 'https://lite.brainlife.io', data: { type: 'niivue-config', config: { path: 'good' } } });
+  win.dispatch({ origin: 'https://evil.example', source: parent, data: { type: 'niivue-config', config: { path: 'evil' } } });
+  win.dispatch({ origin: 'https://lite.brainlife.io', source: parent, data: { type: 'other', config: { path: 'x' } } });
+  win.dispatch({ origin: 'https://lite.brainlife.io', source: parent, data: { type: 'niivue-config', config: { path: 'good' } } });
   assert.deepEqual(await p, { path: 'good' });
   assert.equal(win.listenerCount(), 0);
 });
@@ -71,4 +71,25 @@ test('not framed and no config resolves null immediately, without a handshake', 
   assert.equal(await receiveConfig(win, { timeoutMs: 5000 }), null);
   assert.ok(Date.now() - start < 1000);
   assert.equal(win.listenerCount(), 0);
+});
+
+test('port-less localhost, port-less 127.0.0.1 and look-alike brainlife hosts are rejected', () => {
+  const own = 'https://brainlife.io';
+  for (const o of ['http://localhost', 'http://127.0.0.1', 'https://evilbrainlife.io'])
+    assert.equal(isAllowedOrigin(o, own), false, o);
+});
+
+test("the opaque origin 'null' is rejected even when it is our own", () => {
+  assert.equal(isAllowedOrigin('null', 'null'), false);
+});
+
+test('a message from a window other than the parent is ignored', async () => {
+  const parent = fakeParent();
+  Object.defineProperty(parent, 'config', { get() { throw new Error('SecurityError'); } });
+  const win = fakeWin({ parent });
+  const p = receiveConfig(win, { timeoutMs: 1000 });
+  const other = {};
+  win.dispatch({ origin: 'https://lite.brainlife.io', source: other, data: { type: 'niivue-config', config: { path: 'other' } } });
+  win.dispatch({ origin: 'https://lite.brainlife.io', source: parent, data: { type: 'niivue-config', config: { path: 'good' } } });
+  assert.deepEqual(await p, { path: 'good' });
 });

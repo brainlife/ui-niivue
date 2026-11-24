@@ -1,4 +1,6 @@
 export function isAllowedOrigin(origin, ownOrigin) {
+  // An opaque origin ('null': sandboxed frames, file: pages) names no one in particular.
+  if (origin === 'null') return false;
   if (origin === ownOrigin) return true;
   let url;
   try { url = new URL(origin); } catch { return false; }
@@ -27,6 +29,7 @@ export function receiveConfig(win, { timeoutMs = 10000 } = {}) {
       resolve(value);
     };
     const onMessage = event => {
+      if (event.source !== win.parent) return;
       if (!isAllowedOrigin(event.origin, ownOrigin)) return;
       if (event.data?.type !== 'niivue-config' || !event.data.config) return;
       finish(event.data.config);
