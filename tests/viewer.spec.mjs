@@ -34,7 +34,7 @@ async function openViewer(page, config) {
   });
   await page.route('**/fixture/**', route => {
     const url = route.request().url();
-    const body = url.endsWith('tracts.tck') ? tckBytes(STREAMLINES) : url.endsWith('tracts.trk') ? trkBytes(STREAMLINES) :
+    const body = url.endsWith('preview.tck') ? tckBytes(STREAMLINES.slice(0, 1)) : url.endsWith('tracts.tck') ? tckBytes(STREAMLINES) : url.endsWith('tracts.trk') ? trkBytes(STREAMLINES) :
       url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : url.endsWith('nogroups.trx') ? trxBytes(STREAMLINES) : null;
     if (body) return route.fulfill({ contentType: 'application/octet-stream', body });
     return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('two.tck') ? tract(0, twoStreamlines) : url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
@@ -332,5 +332,71 @@ test('a background that fails to load is reported and the tracts still load', as
   await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   expect(await page.evaluate(() => window.testViewer.volumes.length)).toBe(0);
   await expect(page.locator('#tractBanner')).toContainText('Background image could not be loaded');
+  expect(errors).toEqual([]);
+});
+
+const tckSize = tckBytes(STREAMLINES).length;
+const budgeted = extra => ({ datatype: 'neuro/track/tck', budgetBytes: 10, files: [{ url: '/fixture/tracts.tck', name: 'tracts.tck', size: tckSize, ...extra }] });
+const offsets = page => page.evaluate(() => window.testViewer.meshes.map(m => m.trx?.offsets.length));
+
+test('over budget with a preview loads the preview, then the full file on request', async ({ page }) => {
+  const errors = await openViewer(page, budgeted({ previewUrl: '/fixture/preview.tck' }));
+  await expect.poll(() => offsets(page)).toEqual([2]);
+  const banner = page.locator('#tractBanner');
+  await expect(banner).toContainText('Preview');
+  await page.fill('#fiberRadius', '0.4');
+  await page.locator('#fiberRadius').dispatchEvent('change');
+  const messages = [];
+  page.once('dialog', d => { messages.push(d.message()); d.accept(); });
+  await page.getByRole('button', { name: /Load full/ }).click();
+  await expect.poll(() => offsets(page)).toEqual([4]);
+  expect(messages[0]).toContain('KB');
+  await expect(banner).not.toContainText('Preview');
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.4);
+  expect(errors).toEqual([]);
+});
+
+test('declining the full load keeps the preview', async ({ page }) => {
+  const errors = await openViewer(page, budgeted({ previewUrl: '/fixture/preview.tck' }));
+  await expect.poll(() => offsets(page)).toEqual([2]);
+  page.once('dialog', d => d.dismiss());
+  await page.getByRole('button', { name: /Load full/ }).click();
+  await page.waitForTimeout(300);
+  expect(await offsets(page)).toEqual([2]);
+  await expect(page.locator('#tractBanner')).toContainText('Preview');
+  expect(errors).toEqual([]);
+});
+
+test('over budget without a preview asks first; declining loads nothing', async ({ page }) => {
+  page.once('dialog', d => d.dismiss());
+  const errors = await openViewer(page, budgeted({}));
+  await expect(page.locator('#tractBanner')).toContainText('Not loaded');
+  expect(await offsets(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('over budget without a preview loads when the dialog is accepted', async ({ page }) => {
+  page.once('dialog', d => d.accept());
+  const errors = await openViewer(page, budgeted({}));
+  await expect.poll(() => offsets(page)).toEqual([4]);
+  expect(errors).toEqual([]);
+});
+
+test('a file of unknown size loads directly without a dialog', async ({ page }) => {
+  let dialogs = 0;
+  page.on('dialog', d => { dialogs++; d.dismiss(); });
+  const errors = await openViewer(page, budgeted({ size: undefined }));
+  await expect.poll(() => offsets(page)).toEqual([4]);
+  expect(dialogs).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('budget messages sit beside the background failure message', async ({ page }) => {
+  await page.route('**/missing/bg.nii', route => route.fulfill({ status: 404, body: '' }));
+  page.once('dialog', d => d.dismiss());
+  const errors = await openViewer(page, { ...budgeted({}), background: { url: '/missing/bg.nii', name: 'missing.nii' } });
+  const banner = page.locator('#tractBanner');
+  await expect(banner).toContainText('Not loaded');
+  await expect(banner).toContainText('Background image could not be loaded');
   expect(errors).toEqual([]);
 });

@@ -16,6 +16,13 @@ export function tractFiles(config) {
   return config?.files || config?.meshes || [];
 }
 
+export function formatSize(bytes) {
+  if (bytes == null) return "";
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(1) + " GB";
+  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(0) + " MB";
+  return (bytes / 1024).toFixed(0) + " KB";
+}
+
 export function planLoad(file, budgetBytes = DEFAULT_BUDGET_BYTES) {
   if (file.size == null || file.size <= budgetBytes) return 'full';
   return file.previewUrl ? 'preview' : 'ask';

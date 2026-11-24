@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TRACT_DATATYPES, isTractDatatype, tractFiles, planLoad, DEFAULT_BUDGET_BYTES } from './tract-config.js';
+import { TRACT_DATATYPES, isTractDatatype, tractFiles, planLoad, formatSize, DEFAULT_BUDGET_BYTES } from './tract-config.js';
 
 test('tract datatypes', () => {
   assert.deepEqual(TRACT_DATATYPES.filter(isTractDatatype).length, 5);
@@ -25,4 +25,10 @@ test('planLoad defaults to a 600 MiB budget', () => {
   assert.equal(DEFAULT_BUDGET_BYTES, 600 * 1024 * 1024);
   assert.equal(planLoad({ url: 'x', size: DEFAULT_BUDGET_BYTES }), 'full');
   assert.equal(planLoad({ url: 'x', size: DEFAULT_BUDGET_BYTES + 1 }), 'ask');
+});
+test('sizes format like the tract list', () => {
+  assert.equal(formatSize(null), '');
+  assert.equal(formatSize(2048), '2 KB');
+  assert.equal(formatSize(5 * 1024 * 1024), '5 MB');
+  assert.equal(formatSize(1.5 * 1024 ** 3), '1.5 GB');
 });

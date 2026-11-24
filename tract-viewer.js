@@ -1,4 +1,4 @@
-import { tractFiles } from "./tract-config.js";
+import { DEFAULT_BUDGET_BYTES, formatSize, planLoad, tractFiles } from "./tract-config.js";
 import { groupPalette, scalarChoices, tractOptionsFor } from "./tract-controls.js";
 
 // rc.16 renders tracts as tubes; start with thin, three-sided geometry.
@@ -15,6 +15,18 @@ function ensureBanner() {
   return banner;
 }
 
+// One banner, one line per message, so a budget note never erases a background failure.
+function bannerLine(key) {
+  const banner = ensureBanner();
+  let line = banner.querySelector(`[data-line="${key}"]`);
+  if (!line) {
+    line = document.createElement("div");
+    line.dataset.line = key;
+    banner.append(line);
+  }
+  return line;
+}
+
 export async function startTractViewer(nv, meshLoader, config) {
   const files = tractFiles(config);
   if (config.datatype === "neuro/track/zarr-vectors") {
@@ -27,7 +39,7 @@ export async function startTractViewer(nv, meshLoader, config) {
       await nv.loadVolumes([{ url: config.background.url, name: config.background.name, colormap: "gray" }]);
     } catch (error) {
       console.error("Unable to load background image:", error);
-      ensureBanner().textContent = "Background image could not be loaded";
+      bannerLine("background").textContent = "Background image could not be loaded";
     }
   }
   const legacy = config.datatype === "neuro/tcks" || (config.datatype === "neuro/track/tck" && !config.files);
@@ -41,8 +53,44 @@ export async function startTractViewer(nv, meshLoader, config) {
   const controls = createTractControls(nv);
   const file = files[0];
   if (!file) return;
-  const mesh = await meshLoader.add({ url: file.url, name: file.name, tractOptions: { ...TRACT_OPTIONS } });
-  await controls.register(mesh, {});
+  const budget = config.budgetBytes ?? config.tckBudgetBytes ?? DEFAULT_BUDGET_BYTES;
+  const plan = planLoad(file, budget);
+  const load = async url => {
+    const mesh = await meshLoader.add({ url, name: file.name, tractOptions: { ...TRACT_OPTIONS } });
+    await controls.register(mesh, {});
+    return mesh;
+  };
+  const line = bannerLine("budget");
+  if (plan === "ask") {
+    if (!confirm(`${file.name} is ${formatSize(file.size)}, over the ${formatSize(budget)} limit. Load it anyway?`)) {
+      line.textContent = `Not loaded: ${formatSize(file.size)} is over the ${formatSize(budget)} limit`;
+      return;
+    }
+  }
+  if (plan !== "preview") {
+    await load(file.url);
+    return;
+  }
+  let preview = await load(file.previewUrl);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = `Load full (${formatSize(file.size)})`;
+  line.replaceChildren("Preview \u00b7 ", button);
+  button.addEventListener("click", async () => {
+    if (!confirm(`Load the full tractogram (${formatSize(file.size)})? It may use a lot of memory.`)) return;
+    button.disabled = true;
+    try {
+      const full = await load(file.url);
+      controls.unregister(preview);
+      await meshLoader.remove(preview);
+      preview = full;
+      line.replaceChildren();
+    } catch (error) {
+      console.error("Unable to load the full tractogram:", error);
+      button.disabled = false;
+      line.replaceChildren("Preview \u00b7 full file could not be loaded \u00b7 ", button);
+    }
+  });
 }
 
 // Build a checklist of tract bundles and load/unload them on demand so the
@@ -66,10 +114,7 @@ function setupTractSelector(nv1, meshLoader, meshes, controls) {
   // Map source URLs to mesh objects; indices change whenever a mesh is removed.
   const loaded = new Map();        // meshSpec.url -> mesh
   const inflight = new Set();       // urls currently loading (prevents double clicks)
-  const fmtSize = b => (b == null) ? "" :
-    (b >= 1024*1024*1024 ? (b/1024/1024/1024).toFixed(1)+" GB"
-     : b >= 1024*1024 ? (b/1024/1024).toFixed(0)+" MB"
-     : (b/1024).toFixed(0)+" KB");
+  const fmtSize = formatSize;
 
   // Auto-load ONLY the first tract to keep initial memory use minimal; the user
   // selects any additional tracts on demand. This applies to every launch point
