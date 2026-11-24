@@ -23,6 +23,14 @@ function tract(offset, streamlines) {
   return tckBytes(streamlines || [[[0, offset, 0], [3, offset + 1, 3], [7, offset, 7]]]);
 }
 const twoStreamlines = [[[0, 0, 0], [1, 1, 1], [2, 2, 2]], [[5, 5, 5], [6, 6, 6], [7, 7, 7]]];
+// Count tract rebuilds (setTractOptions) and record the tract options each addMesh receives.
+const SPIES = `
+window.tractCalls = { set: 0, add: [] };
+{
+  const set = nv1.setTractOptions.bind(nv1), add = nv1.addMesh.bind(nv1);
+  nv1.setTractOptions = (...args) => { window.tractCalls.set++; return set(...args); };
+  nv1.addMesh = (options, ...rest) => { window.tractCalls.add.push(options.tractOptions ? JSON.parse(JSON.stringify(options.tractOptions)) : null); return add(options, ...rest); };
+}`;
 async function openViewer(page, config) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -30,12 +38,13 @@ async function openViewer(page, config) {
   // Test-only access to the real instance without a production debug global.
   await page.route('**/index.js', async route => {
     if (new URL(route.request().url()).pathname !== '/index.js') return route.continue();
-    await route.fulfill({ contentType: 'text/javascript', body: readFileSync(new URL('../index.js', import.meta.url), 'utf8') + '\nwindow.testViewer = nv1;'});
+    await route.fulfill({ contentType: 'text/javascript', body: readFileSync(new URL('../index.js', import.meta.url), 'utf8') + '\nwindow.testViewer = nv1;' + SPIES});
   });
   await page.route('**/fixture/**', route => {
     const url = route.request().url();
     const body = url.endsWith('preview.tck') ? tckBytes(STREAMLINES.slice(0, 1)) : url.endsWith('tracts.tck') ? tckBytes(STREAMLINES) : url.endsWith('tracts.trk') ? trkBytes(STREAMLINES) :
-      url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : url.endsWith('nogroups.trx') ? trxBytes(STREAMLINES) : null;
+      url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : url.endsWith('nogroups.trx') ? trxBytes(STREAMLINES) :
+      url.endsWith('partial.trx') ? trxBytes(STREAMLINES, { groups: { AF_L: [0], CST_R: [1] } }) : null;
     if (body) return route.fulfill({ contentType: 'application/octet-stream', body });
     return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('two.tck') ? tract(0, twoStreamlines) : url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
   });
@@ -174,8 +183,103 @@ test('TRX group list filters streamlines by group', async ({ page }) => {
   await page.click('#tractClearAll');
   await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(false);
   await page.click('#tractSelectAll');
-  await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L', 'CST_R']);
+  // Every group ticked: no mask at all.
+  await expect.poll(async () => (await options(page)).visibleGroups).toBeNull();
   await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+// Streamlines drawn: tessellation makes fiberSides vertices per kept point.
+const drawnPoints = page => page.evaluate(() => { const m = window.testViewer.meshes[0]; return m.positions.length / 3 / m.tractOptions.fiberSides; });
+const ALL_POINTS = STREAMLINES.flat().length;   // 9
+
+test('streamlines in no TRX group get their own row and are shown', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('partial.trx'));
+  await expect(page.locator('#tractPanel .tract-row')).toHaveText([/AF_L\s*1/, /CST_R\s*1/, /Other streamlines\s*1/]);
+  await expect.poll(async () => (await options(page)).visibleGroups).toBeNull();
+  expect(Object.keys((await options(page)).groupColors)).toEqual(['AF_L', 'CST_R', 'Other streamlines']);
+  await expect.poll(() => drawnPoints(page)).toBe(ALL_POINTS);
+  await page.click('#tractClearAll');
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(false);
+  await page.click('#tractSelectAll');
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(true);
+  await expect.poll(async () => (await options(page)).visibleGroups).toBeNull();
+  await expect.poll(() => drawnPoints(page)).toBe(ALL_POINTS);
+  await page.locator('.tract-row').filter({ hasText: 'Other streamlines' }).locator('input').uncheck();
+  await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L', 'CST_R']);
+  await expect.poll(() => drawnPoints(page)).toBe(STREAMLINES[0].length + STREAMLINES[1].length);
+  await page.selectOption('#fiberColor', 'global');
+  await page.locator('.tract-row').filter({ hasText: 'Other streamlines' }).locator('input').check();
+  await expect.poll(async () => (await options(page)).visibleGroups).toBeNull();
+  await expect.poll(() => drawnPoints(page)).toBe(ALL_POINTS);
+  expect(errors).toEqual([]);
+});
+
+test('opacity changes the mesh without rebuilding the tracts', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect(page.locator('#tractPanel .tract-row')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].tractOptions.groupColors)).not.toBeNull();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    window.tractCalls.set = 0;
+    const el = document.getElementById('fiberOpacity');
+    for (const v of ['0.9', '0.7', '0.5', '0.3']) { el.value = v; el.dispatchEvent(new Event('input')); }
+    el.dispatchEvent(new Event('change'));
+  });
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].opacity)).toBe(0.3);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.tractCalls.set)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('rapid control changes run one pass at a time and end in the latest state', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect(page.locator('#tractPanel .tract-row')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].tractOptions.groupColors)).not.toBeNull();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const nv = window.testViewer, inner = nv.setTractOptions;
+    const flight = window.flight = { now: 0, max: 0, calls: 0 };
+    nv.setTractOptions = async (...args) => {
+      flight.now++; flight.calls++; flight.max = Math.max(flight.max, flight.now);
+      try { await new Promise(r => setTimeout(r, 50)); return await inner(...args); } finally { flight.now--; }
+    };
+    const el = document.getElementById('fiberMinLength');
+    for (const v of ['1', '2', '3', '4', '5']) { el.value = v; el.dispatchEvent(new Event('change')); }
+  });
+  await expect.poll(async () => (await options(page)).minLength).toBe(5);
+  await page.waitForTimeout(300);
+  const flight = await page.evaluate(() => window.flight);
+  expect(flight.max).toBe(1);
+  expect(flight.calls).toBeLessThanOrEqual(2);
+  expect((await options(page)).minLength).toBe(5);
+  expect(errors).toEqual([]);
+});
+
+test('a file without groups is built once, with the control options', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('nogroups.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.tractCalls.set)).toBe(0);
+  const added = await page.evaluate(() => window.tractCalls.add);
+  expect(added).toHaveLength(1);
+  expect(added[0]).toMatchObject({ fiberRadius: 0.1, fiberSides: 3, decimation: 1, minLength: 0, colorBy: 'global' });
+  expect((await options(page)).colorBy).toBe('global');
+  expect(errors).toEqual([]);
+});
+
+test('tcks bundles are built once each, in their own colours', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [
+    { url: '/fixture/left.tck', name: 'left', rgba255: [255,0,0,255] },
+    { url: '/fixture/right.tck', name: 'right', rgba255: [0,255,0,255] },
+  ] });
+  await expect(page.locator('#tractSummary')).toContainText('1 / 2');
+  await page.locator('.tract-row').filter({ hasText: 'right' }).locator('input').check();
+  await expect(page.locator('#tractSummary')).toContainText('2 / 2');
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.tractCalls.set)).toBe(0);
+  const added = await page.evaluate(() => window.tractCalls.add);
+  expect(added.map(o => [o.colorBy, o.fixedColor])).toEqual([['fixed', [255,0,0,255]], ['fixed', [0,255,0,255]]]);
   expect(errors).toEqual([]);
 });
 
@@ -240,7 +344,7 @@ test('removing a bundle while an apply is in flight does not write to the wrong 
     nv.setTractOptions = async (...args) => { if (first) { first = false; await gate; } return setTractOptions(...args); };
     nv.setMesh = (i, opts) => { window.setMeshCalls.push(nv.meshes[i]?.name); return setMesh(i, opts); };
   });
-  await page.evaluate(() => { const el = document.getElementById('fiberOpacity'); el.value = '0.3'; el.dispatchEvent(new Event('change')); });
+  await page.evaluate(() => { const el = document.getElementById('fiberRadius'); el.value = '0.3'; el.dispatchEvent(new Event('change')); });
   await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
   await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.map(m => m.name))).toEqual(['right']);
   await page.evaluate(() => window.releaseGate());
@@ -337,13 +441,13 @@ test('a background that fails to load is reported and the tracts still load', as
 
 const tckSize = tckBytes(STREAMLINES).length;
 const budgeted = extra => ({ datatype: 'neuro/track/tck', budgetBytes: 10, files: [{ url: '/fixture/tracts.tck', name: 'tracts.tck', size: tckSize, ...extra }] });
-const offsets = page => page.evaluate(() => window.testViewer.meshes.map(m => m.trx?.offsets.length));
+const offsets = page => page.evaluate(() => window.testViewer?.meshes.map(m => m.trx?.offsets.length) ?? null);
 
 test('over budget with a preview loads the preview, then the full file on request', async ({ page }) => {
   const errors = await openViewer(page, budgeted({ previewUrl: '/fixture/preview.tck' }));
   await expect.poll(() => offsets(page)).toEqual([2]);
   const banner = page.locator('#tractBanner');
-  await expect(banner).toContainText('Preview');
+  await expect(banner.locator('[data-line=budget]')).toHaveText(/^Preview: 1 streamline · Load full \(\d+ KB\)$/);
   await page.fill('#fiberRadius', '0.4');
   await page.locator('#fiberRadius').dispatchEvent('change');
   const messages = [];
@@ -353,6 +457,13 @@ test('over budget with a preview loads the preview, then the full file on reques
   expect(messages[0]).toContain('KB');
   await expect(banner).not.toContainText('Preview');
   await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.4);
+  expect(errors).toEqual([]);
+});
+
+test('the preview banner gives the full streamline count when the host knows it', async ({ page }) => {
+  const errors = await openViewer(page, budgeted({ previewUrl: '/fixture/preview.tck', streamlines: 3 }));
+  await expect.poll(() => offsets(page)).toEqual([2]);
+  await expect(page.locator('#tractBanner [data-line=budget]')).toHaveText(/^Preview: 1 of 3 streamlines · Load full \(\d+ KB\)$/);
   expect(errors).toEqual([]);
 });
 

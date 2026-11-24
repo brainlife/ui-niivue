@@ -1,8 +1,5 @@
 import { DEFAULT_BUDGET_BYTES, formatSize, planLoad, tractFiles } from "./tract-config.js";
-import { groupPalette, scalarChoices, tractOptionsFor } from "./tract-controls.js";
-
-// rc.16 renders tracts as tubes; start with thin, three-sided geometry.
-const TRACT_OPTIONS = { fiberRadius: 0.1, fiberSides: 3 };
+import { groupPalette, scalarChoices, tractOptionsFor, ungroupedGroup } from "./tract-controls.js";
 
 function ensureBanner() {
   let banner = document.getElementById("tractBanner");
@@ -56,8 +53,9 @@ export async function startTractViewer(nv, meshLoader, config) {
   const budget = config.budgetBytes ?? config.tckBudgetBytes ?? DEFAULT_BUDGET_BYTES;
   const plan = planLoad(file, budget);
   const load = async url => {
-    const mesh = await meshLoader.add({ url, name: file.name, tractOptions: { ...TRACT_OPTIONS } });
-    await controls.register(mesh, {});
+    const tractOptions = controls.loadOptions();
+    const mesh = await meshLoader.add({ url, name: file.name, tractOptions });
+    await controls.register(mesh, { loadedWith: tractOptions });
     return mesh;
   };
   const line = bannerLine("budget");
@@ -75,7 +73,8 @@ export async function startTractViewer(nv, meshLoader, config) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = `Load full (${formatSize(file.size)})`;
-  line.replaceChildren("Preview \u00b7 ", button);
+  const label = previewLabel(preview.trx ? preview.trx.offsets.length - 1 : 0, file.streamlines);
+  line.replaceChildren(`${label} \u00b7 `, button);
   button.addEventListener("click", async () => {
     if (!confirm(`Load the full tractogram (${formatSize(file.size)})? It may use a lot of memory.`)) return;
     button.disabled = true;
@@ -88,9 +87,15 @@ export async function startTractViewer(nv, meshLoader, config) {
     } catch (error) {
       console.error("Unable to load the full tractogram:", error);
       button.disabled = false;
-      line.replaceChildren("Preview \u00b7 full file could not be loaded \u00b7 ", button);
+      line.replaceChildren(`${label} \u00b7 full file could not be loaded \u00b7 `, button);
     }
   });
+}
+
+// "Preview: N of M streamlines"; M only when the host gave the full count.
+function previewLabel(shown, total) {
+  if (total != null) return `Preview: ${shown} of ${total} streamlines`;
+  return `Preview: ${shown} streamline${shown === 1 ? "" : "s"}`;
 }
 
 // Build a checklist of tract bundles and load/unload them on demand so the
@@ -131,21 +136,17 @@ function setupTractSelector(nv1, meshLoader, meshes, controls) {
     if (loaded.has(spec.url) || inflight.has(spec.url)) return;
     inflight.add(spec.url);
     try {
-      const added = await meshLoader.add({
-        url: spec.url, name: spec.name,
-        tractOptions: {
-          fiberRadius: 0.1, fiberSides: 3,
-          ...(spec.rgba255 ? { colorBy: "fixed", fixedColor: spec.rgba255 } : {}),
-        },
-      });
+      // "bundle" colour means each file in its own colour; a lone file is not recoloured.
+      const look = { fileColor: spec.rgba255, defaultColor: meshes.length > 1 ? "bundle" : "global" };
+      const tractOptions = controls.loadOptions(look);
+      const added = await meshLoader.add({ url: spec.url, name: spec.name, tractOptions });
       // Clear/uncheck during a fetch must also remove the eventual result.
       if (!spec._checkbox.checked) {
         await meshLoader.remove(added);
         return;
       }
       loaded.set(spec.url, added);
-      // "bundle" colour means each file in its own colour; a lone file is not recoloured.
-      await controls.register(added, { fileColor: spec.rgba255, defaultColor: meshes.length > 1 ? "bundle" : "global" });
+      await controls.register(added, { ...look, loadedWith: tractOptions });
     } catch (err) {
       console.error("Error loading tract", spec.name, err);
       if (spec._checkbox) spec._checkbox.checked = false;
@@ -311,10 +312,15 @@ const byId = id => document.getElementById(id);
 const round = value => Number(Number(value).toPrecision(6));
 
 // Wires the header controls (and, for TRX files with groups, the group list) to
-// every tract mesh that has been registered. One apply() reads the current
-// control state, so changes made while a file is still loading are not lost.
+// every tract mesh that has been registered. Rebuilding a tract mesh
+// (setTractOptions) is synchronous and slow for big files, so rebuilds run one
+// at a time: a change marks every mesh as dirty and a single worker rebuilds
+// dirty meshes from the control state current at that moment. Changes made
+// while a file is still loading are seen when it registers.
 function createTractControls(nv) {
   const registry = new Map();      // mesh -> { fileColor }
+  const dirty = new Set();         // meshes waiting for a rebuild
+  let worker = null;               // the running rebuild loop, if any
   let touched = false;             // the user has chosen a colour mode
   let groups = null;               // { names, checks } for the single TRX file's group list
 
@@ -331,23 +337,45 @@ function createTractControls(nv) {
       visibleGroups: groups ? groups.names.filter((name, i) => groups.checks[i].checked) : [],
     };
   }
+  const opacity = () => Number(byId("fiberOpacity").value);
+  const groupNamesOf = mesh => Object.keys(mesh.trx?.groups || {});
+  const optionsFor = mesh => tractOptionsFor(state(), { groupNames: groupNamesOf(mesh), fileColor: registry.get(mesh)?.fileColor });
+  const allHidden = mesh => groupNamesOf(mesh).length > 0 && state().visibleGroups.length === 0;
 
   async function applyTo(mesh) {
-    const index = nv.meshes.indexOf(mesh);
-    const info = registry.get(mesh);
-    if (index < 0 || !info) return;
-    const groupNames = Object.keys(mesh.trx?.groups || {});
-    const current = state();
-    await nv.setTractOptions(index, tractOptionsFor(current, { groupNames, fileColor: info.fileColor }));
+    if (nv.meshes.indexOf(mesh) < 0 || !registry.has(mesh)) return;
+    const hidden = allHidden(mesh);
+    // A hidden mesh is not rebuilt; showing it again rebuilds it from the then-current controls.
+    if (!hidden) await nv.setTractOptions(nv.meshes.indexOf(mesh), optionsFor(mesh));
     // Indices shift when a mesh is removed during the await above; resolve again.
     const latest = nv.meshes.indexOf(mesh);
     if (latest < 0) return;
-    const hidden = groupNames.length > 0 && current.visibleGroups.length === 0;
-    nv.setMesh(latest, { opacity: Number(byId("fiberOpacity").value), visible: !hidden });
+    await nv.setMesh(latest, { opacity: opacity(), visible: !hidden });
   }
-  async function apply() {
-    try { for (const mesh of [...registry.keys()]) await applyTo(mesh); }
-    catch (error) { console.error("Unable to update tracts:", error); }
+  async function drain() {
+    await null;   // let the caller store `worker` before the loop can finish
+    try {
+      while (dirty.size) {
+        const [mesh] = dirty;
+        dirty.delete(mesh);
+        try { await applyTo(mesh); }
+        catch (error) { console.error("Unable to update tracts:", error); }
+      }
+    } finally { worker = null; }
+  }
+  function schedule(meshes) {
+    for (const mesh of meshes) dirty.add(mesh);
+    if (!worker) worker = drain();
+    return worker;
+  }
+  const apply = () => schedule(registry.keys());
+
+  // Opacity needs no rebuild.
+  function applyOpacity() {
+    for (const mesh of registry.keys()) {
+      const index = nv.meshes.indexOf(mesh);
+      if (index >= 0) nv.setMesh(index, { opacity: opacity() }).catch(error => console.error("Unable to update tracts:", error));
+    }
   }
 
   function scalarMeta(value) {
@@ -378,7 +406,7 @@ function createTractControls(nv) {
   }
 
   function buildGroupList(mesh) {
-    const names = Object.keys(mesh.trx?.groups || {});
+    const names = groupNamesOf(mesh);
     if (!names.length || groups) return;
     const ui = ensureTractPanel();
     const palette = groupPalette(names);
@@ -411,23 +439,40 @@ function createTractControls(nv) {
     ui.clearAll.onclick = setAll(false);
   }
 
-  async function register(mesh, { fileColor, defaultColor } = {}) {
+  function useDefaultColor(defaultColor) {
+    if (!touched && defaultColor) byId("fiberColor").value = defaultColor;
+  }
+  // Tract options for addMesh, so a file is built once with the current controls.
+  // Groups are unknown until the file is read; register() rebuilds if they matter.
+  function loadOptions({ fileColor, defaultColor } = {}) {
+    useDefaultColor(defaultColor);
+    return tractOptionsFor(state(), { fileColor });
+  }
+
+  async function register(mesh, { fileColor, defaultColor, loadedWith } = {}) {
+    // NiiVue's group mask drops streamlines in no group; give them a group of their own.
+    const extra = mesh.trx && ungroupedGroup(mesh.trx.groups, mesh.trx.offsets.length - 1);
+    if (extra) mesh.trx.groups[extra.name] = extra.ids;
     registry.set(mesh, { fileColor });
     refreshChoices();
-    if (!touched) {
-      const hasGroups = Object.keys(mesh.trx?.groups || {}).length > 0;
-      byId("fiberColor").value = defaultColor || (hasGroups ? "bundle" : "global");
-    }
+    const hasGroups = groupNamesOf(mesh).length > 0;
+    useDefaultColor(defaultColor || (hasGroups ? "bundle" : "global"));
     buildGroupList(mesh);
     prefillRange();
-    await applyTo(mesh);
+    // Rebuild only when the options differ from those the file was built with:
+    // it has groups, or the controls changed while it loaded.
+    const stale = !loadedWith || allHidden(mesh) || JSON.stringify(optionsFor(mesh)) !== JSON.stringify(loadedWith);
+    if (stale) return schedule([mesh]);
+    const index = nv.meshes.indexOf(mesh);
+    if (index >= 0) await nv.setMesh(index, { opacity: opacity(), visible: true });
   }
-  function unregister(mesh) { registry.delete(mesh); }
+  function unregister(mesh) { registry.delete(mesh); dirty.delete(mesh); }
 
   byId("fiberColor").addEventListener("change", () => { touched = true; prefillRange(); apply(); });
-  for (const id of ["fiberRadius", "fiberDecimation", "fiberMinLength", "fiberColormap", "fiberCalMin", "fiberCalMax", "fiberOpacity"])
+  for (const id of ["fiberRadius", "fiberDecimation", "fiberMinLength", "fiberColormap", "fiberCalMin", "fiberCalMax"])
     byId(id).addEventListener("change", apply);
-  byId("fiberOpacity").addEventListener("input", apply);
+  byId("fiberOpacity").addEventListener("input", applyOpacity);
+  byId("fiberOpacity").addEventListener("change", applyOpacity);
 
-  return { register, unregister, apply };
+  return { register, unregister, apply, loadOptions };
 }

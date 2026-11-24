@@ -21,9 +21,11 @@ export function scalarChoices(trx) {
 export function tractOptionsFor(state, { groupNames = [], fileColor } = {}) {
   const hasGroups = groupNames.length > 0;
   const visible = state.visibleGroups || [];
+  // With every group ticked no mask is needed (a mask would only ever drop streamlines).
+  const everyGroup = hasGroups && groupNames.every(name => visible.includes(name));
   const options = {
     fiberRadius: state.radius, fiberSides: 3, decimation: state.stride, minLength: state.minLength,
-    visibleGroups: hasGroups ? visible : null,
+    visibleGroups: hasGroups && !everyGroup ? visible : null,
     groupColors: null,
   };
   const color = state.color;
@@ -36,7 +38,26 @@ export function tractOptionsFor(state, { groupNames = [], fileColor } = {}) {
       options.groupColors = Object.fromEntries(visible.filter(n => n in palette).map(n => [n, palette[n]]));
     } else { options.colorBy = 'fixed'; options.fixedColor = fileColor ?? [255, 255, 255, 255]; }
   } else {
-    Object.assign(options, { colorBy: color, colormap: state.colormap, calMin: state.calMin, calMax: state.calMax });
+    Object.assign(options, { colorBy: color, colormap: state.colormap });
+    // An empty box sends no key: NiiVue auto-ranges only when the range is 0 or absent.
+    if (state.calMin !== undefined) options.calMin = state.calMin;
+    if (state.calMax !== undefined) options.calMax = state.calMax;
   }
   return options;
+}
+
+// TRX streamlines that belong to no group, as one more group, so a group list
+// (which drives visibleGroups and groupColors) can still show them.
+// Returns { name, ids } or null when the groups cover every streamline.
+export function ungroupedGroup(groups, count) {
+  const names = Object.keys(groups || {});
+  if (!names.length) return null;
+  const grouped = new Uint8Array(count);
+  for (const name of names) for (const id of groups[name]) if (id < count) grouped[id] = 1;
+  const ids = [];
+  for (let i = 0; i < count; i++) if (!grouped[i]) ids.push(i);
+  if (!ids.length) return null;
+  let name = 'Other streamlines';
+  for (let n = 2; Object.hasOwn(groups, name); n++) name = `Other streamlines (${n})`;
+  return { name, ids: Uint32Array.from(ids) };
 }

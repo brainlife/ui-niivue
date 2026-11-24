@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupPalette, scalarChoices, tractOptionsFor } from './tract-controls.js';
+import { groupPalette, scalarChoices, tractOptionsFor, ungroupedGroup } from './tract-controls.js';
 
 const base = { color: 'global', colormap: 'inferno', calMin: 0.2, calMax: 0.9, radius: 0.1, stride: 2, minLength: 10, visibleGroups: [] };
 
@@ -63,4 +63,33 @@ test('non-bundle colouring leaves group colours unset but keeps group visibility
 test('fixed colour uses the file colour', () => {
   const o = tractOptionsFor({ ...base, color: 'fixed' }, { groupNames: [], fileColor: [9, 9, 9, 255] });
   assert.equal(o.colorBy, 'fixed'); assert.deepEqual(o.fixedColor, [9, 9, 9, 255]);
+});
+
+test('every group ticked sends no visibility mask, and bundle colour still colours every group', () => {
+  const o = tractOptionsFor({ ...base, color: 'bundle', visibleGroups: ['A', 'B'] }, { groupNames: ['A', 'B'] });
+  assert.equal(o.visibleGroups, null);
+  assert.deepEqual(Object.keys(o.groupColors), ['A', 'B']);
+  assert.equal(tractOptionsFor({ ...base, visibleGroups: ['B', 'A'] }, { groupNames: ['A', 'B'] }).visibleGroups, null);
+});
+
+test('an empty range box sends no calMin or calMax key', () => {
+  const o = tractOptionsFor({ ...base, color: 'dpv:FA', calMin: undefined, calMax: undefined }, { groupNames: [] });
+  assert.equal('calMin' in o, false); assert.equal('calMax' in o, false);
+  const half = tractOptionsFor({ ...base, color: 'dpv:FA', calMin: undefined, calMax: 0.5 }, { groupNames: [] });
+  assert.equal('calMin' in half, false); assert.equal(half.calMax, 0.5);
+});
+
+test('ungroupedGroup collects the streamlines that belong to no group', () => {
+  const g = ungroupedGroup({ A: new Uint32Array([0, 2]), B: [3] }, 5);
+  assert.equal(g.name, 'Other streamlines');
+  assert.deepEqual(Array.from(g.ids), [1, 4]);
+  assert.ok(g.ids instanceof Uint32Array);
+  assert.equal(ungroupedGroup({ A: [0, 1] }, 2), null);
+  assert.equal(ungroupedGroup({}, 3), null);
+  assert.equal(ungroupedGroup(undefined, 3), null);
+});
+
+test('ungroupedGroup picks a name that is not taken', () => {
+  assert.equal(ungroupedGroup({ 'Other streamlines': [0] }, 2).name, 'Other streamlines (2)');
+  assert.equal(ungroupedGroup({ 'Other streamlines': [0], 'Other streamlines (2)': [1] }, 3).name, 'Other streamlines (3)');
 });
