@@ -270,8 +270,11 @@ function createTractControls(nv) {
     const groupNames = Object.keys(mesh.trx?.groups || {});
     const current = state();
     await nv.setTractOptions(index, tractOptionsFor(current, { groupNames, fileColor: info.fileColor }));
+    // Indices shift when a mesh is removed during the await above; resolve again.
+    const latest = nv.meshes.indexOf(mesh);
+    if (latest < 0) return;
     const hidden = groupNames.length > 0 && current.visibleGroups.length === 0;
-    nv.setMesh(index, { opacity: Number(byId("fiberOpacity").value), visible: !hidden });
+    nv.setMesh(latest, { opacity: Number(byId("fiberOpacity").value), visible: !hidden });
   }
   async function apply() {
     try { for (const mesh of [...registry.keys()]) await applyTo(mesh); }

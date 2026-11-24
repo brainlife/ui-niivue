@@ -221,3 +221,31 @@ test('a TRX without groups shows no group panel and bundle colour is fixed', asy
   expect((await options(page)).groupColors).toBeNull();
   expect(errors).toEqual([]);
 });
+
+test('removing a bundle while an apply is in flight does not write to the wrong mesh', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [
+    { url: '/fixture/left.tck', name: 'left', rgba255: [255,0,0,255] },
+    { url: '/fixture/right.tck', name: 'right', rgba255: [0,255,0,255] },
+  ] });
+  await expect(page.locator('#tractSummary')).toContainText('1 / 2');
+  await page.locator('.tract-row').filter({ hasText: 'right' }).locator('input').check();
+  await expect(page.locator('#tractSummary')).toContainText('2 / 2');
+  // Hold the first setTractOptions call (for 'left') and record every setMesh call after that.
+  await page.evaluate(() => {
+    const nv = window.testViewer;
+    let release; const gate = new Promise(r => { release = r; });
+    window.releaseGate = release; window.setMeshCalls = [];
+    const setTractOptions = nv.setTractOptions.bind(nv), setMesh = nv.setMesh.bind(nv);
+    let first = true;
+    nv.setTractOptions = async (...args) => { if (first) { first = false; await gate; } return setTractOptions(...args); };
+    nv.setMesh = (i, opts) => { window.setMeshCalls.push(nv.meshes[i]?.name); return setMesh(i, opts); };
+  });
+  await page.evaluate(() => { const el = document.getElementById('fiberOpacity'); el.value = '0.3'; el.dispatchEvent(new Event('change')); });
+  await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.map(m => m.name))).toEqual(['right']);
+  await page.evaluate(() => window.releaseGate());
+  await expect.poll(() => page.evaluate(() => window.setMeshCalls.length)).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.setMeshCalls)).toEqual(['right']);
+  expect(errors).toEqual([]);
+});
