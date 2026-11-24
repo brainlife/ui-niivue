@@ -17,6 +17,7 @@ function readConfig(win) {
 export function receiveConfig(win, { timeoutMs = 10000 } = {}) {
   const present = readConfig(win);
   if (present) return Promise.resolve(present);
+  if (win.parent === win) return Promise.resolve(null);
   return new Promise(resolve => {
     let timer;
     const ownOrigin = win.location?.origin;

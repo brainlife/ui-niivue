@@ -64,3 +64,11 @@ test('no config resolves null after the timeout', async () => {
   assert.equal(await receiveConfig(win, { timeoutMs: 20 }), null);
   assert.equal(win.listenerCount(), 0);
 });
+
+test('not framed and no config resolves null immediately, without a handshake', async () => {
+  const win = fakeWin();
+  const start = Date.now();
+  assert.equal(await receiveConfig(win, { timeoutMs: 5000 }), null);
+  assert.ok(Date.now() - start < 1000);
+  assert.equal(win.listenerCount(), 0);
+});
