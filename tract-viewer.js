@@ -23,7 +23,12 @@ export async function startTractViewer(nv, meshLoader, config) {
   }
   setupViewControls(nv);
   if (config.background?.url) {
-    await nv.loadVolumes([{ url: config.background.url, name: config.background.name, colormap: "gray" }]);
+    try {
+      await nv.loadVolumes([{ url: config.background.url, name: config.background.name, colormap: "gray" }]);
+    } catch (error) {
+      console.error("Unable to load background image:", error);
+      ensureBanner().textContent = "Background image could not be loaded";
+    }
   }
   const legacy = config.datatype === "neuro/tcks" || (config.datatype === "neuro/track/tck" && !config.files);
   if (legacy) {

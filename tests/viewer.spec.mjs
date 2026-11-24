@@ -325,3 +325,12 @@ test('the screenshot button downloads tracts.png', async ({ page }) => {
   expect((await download).suggestedFilename()).toBe('tracts.png');
   expect(errors).toEqual([]);
 });
+
+test('a background that fails to load is reported and the tracts still load', async ({ page }) => {
+  await page.route('**/missing/bg.nii', route => route.fulfill({ status: 404, body: '' }));
+  const errors = await openViewer(page, { ...trxConfig('tracts.trx'), background: { url: '/missing/bg.nii', name: 'missing.nii' } });
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  expect(await page.evaluate(() => window.testViewer.volumes.length)).toBe(0);
+  await expect(page.locator('#tractBanner')).toContainText('Background image could not be loaded');
+  expect(errors).toEqual([]);
+});
