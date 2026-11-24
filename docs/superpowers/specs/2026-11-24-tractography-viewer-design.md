@@ -216,3 +216,12 @@ Steps 4 and 5 ship with TRX, TCK and TRK without waiting for the Zarr
 Vectors PR; Zarr Vectors is routed to the viewer once a NiiVue release
 carries the loader. Until then brainlife-lite's Neuroglancer link is the
 Zarr Vectors path. No interim local copy of the loader (*builder's call*).
+
+## Addendum (2026-11-24): TRX on brainlife
+
+The `neuro/track/trx` datatype stores `track.trx`, and its description says it
+may be the unzipped TRX directory. No brainlife visualizer uses TRX, and the one
+app that reads it (`gamorosino/app-trak2zarr-vectors`) passes it to trx-python,
+which accepts both forms. Decision (Franco: "assume what you need"): warehouse-next
+routes `track.trx` as a zipped single file now; the directory form comes with the
+Zarr Vectors loader, which needs the same "tract mesh from tract data" entry point.
