@@ -48,7 +48,9 @@ Use **CSD glyphs** to toggle it and **Glyph size** to adjust its scale.
 
 ## NiiVue 1.0 migration
 
-Pinned to `@niivue/niivue` `1.0.0-rc.16`, using WebGL2. Run `npm ci` and
+Pinned to `@niivue/niivue` `1.0.0-rc.238` and `@niivue/nv-ext-tile`
+`1.0.0-rc.147` (the OME-Zarr loader, `loadOmeZarrVolumes`, now lives there and
+is re-exported from `dist/index.js`), using WebGL2. Run `npm ci` and
 `npm run build` to regenerate the checked-in `dist/index.js`; changing only the
 npm dependency does not update the deployed viewer. The build bundles bare
 imports and dynamic codecs for the static Warehouse `/ui/niivue/` host.
@@ -62,12 +64,12 @@ events, index-based mesh removal, and `setTractOptions`. CSD geometry is loaded
 through the public MZ3 `File` interface with per-vertex orientation colors;
 it no longer constructs private WebGL mesh objects.
 
-rc.16 tessellates tracts as tubes. Initial loads use a 0.1 mm radius and three
+NiiVue tessellates tracts as tubes. Initial loads use a 0.1 mm radius and three
 sides, and still auto-load only the first bundle. Large tractograms need memory
 validation before production rollout. The old dither control is replaced by
 stride (every Nth streamline); color minimum now controls scalar color mapping.
-`mesh-loader.js` also repairs rc.16's TCK fenceposts, which otherwise omit the
-first streamline. Re-evaluate this workaround on the next NiiVue upgrade.
+The former rc.16 TCK fencepost repair was removed: rc.238 keeps the first
+streamline (covered by a browser test).
 
 Run `npm test` and `npm run test:browser`. Install Chromium with
 `npx playwright install chromium`, or set `PW_BROWSER_PATH` to an existing

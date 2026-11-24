@@ -16,13 +16,15 @@ function nifti(frames = 1) {
   for (let i = 0; i < voxels; i++) bytes.writeFloatLE(frames > 1 ? 1 : i % n, 352 + i * 4);
   return bytes;
 }
-function tract(offset) {
-  const bytes = Buffer.alloc(1000 + 5 * 3 * 4);
-  bytes.write('mrtrix tracks\ncount: 1\ndatatype: Float32LE\nfile: . 1000\nEND\n');
-  const points = [[0, offset, 0], [3, offset + 1, 3], [7, offset, 7], [NaN,NaN,NaN], [Infinity,Infinity,Infinity]];
-  points.flat().forEach((v,i) => bytes.writeFloatLE(v,1000 + i*4));
+function tract(offset, streamlines) {
+  streamlines ||= [[[0, offset, 0], [3, offset + 1, 3], [7, offset, 7]]];
+  const points = streamlines.flatMap(line => [...line, [NaN, NaN, NaN]]).concat([[Infinity, Infinity, Infinity]]);
+  const bytes = Buffer.alloc(1000 + points.length * 3 * 4);
+  bytes.write(`mrtrix tracks\ncount: ${streamlines.length}\ndatatype: Float32LE\nfile: . 1000\nEND\n`);
+  points.flat().forEach((v, i) => bytes.writeFloatLE(v, 1000 + i * 4));
   return bytes;
 }
+const twoStreamlines = [[[0, 0, 0], [1, 1, 1], [2, 2, 2]], [[5, 5, 5], [6, 6, 6], [7, 7, 7]]];
 async function openViewer(page, config) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -34,7 +36,7 @@ async function openViewer(page, config) {
   });
   await page.route('**/fixture/**', route => {
     const url = route.request().url();
-    return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
+    return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('two.tck') ? tract(0, twoStreamlines) : url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
   });
   await page.goto('/');
   return errors;
@@ -124,5 +126,12 @@ test('single tract ignores a supplied fixed color', async ({ page }) => {
   ] });
   await expect(page.locator('#tractSummary')).toContainText('1 / 1');
   expect(await page.evaluate(() => window.testViewer.meshes[0].tractOptions.colorBy)).not.toBe('fixed');
+  expect(errors).toEqual([]);
+});
+
+test('TCK keeps its first streamline', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [{ url: '/fixture/two.tck', name: 'two' }] });
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(3);
+  expect(await page.evaluate(() => Array.from(window.testViewer.meshes[0].trx.offsets))).toEqual([0, 3, 6]);
   expect(errors).toEqual([]);
 });
