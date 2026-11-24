@@ -62,14 +62,15 @@ window.config = {
     name: 'bundles.trx',
     size: 1288490188,                          // bytes, optional
     previewUrl: 'https://example.org/bundles-preview.trx', // optional
+    streamlines: 2000000,                      // streamlines in the full file, optional
   }],
   background: { url: 'https://example.org/t1.nii.gz', name: 't1.nii.gz' }, // optional
   budgetBytes: 600 * 1024 * 1024,              // optional, this is the default
 };
 ```
 
-`files` is a list of `{url, name, size, previewUrl}`. For `trx`, `trk` and
-`tck` with `files`, only the first entry is loaded. `background` is an optional
+`files` is a list of `{url, name, size, previewUrl, streamlines}`. For `trx`,
+`trk` and `tck` with `files`, only the first entry is loaded. `background` is an optional
 grayscale volume shown under the tracts; if it fails to load, a notice appears
 and the tracts still load. Legacy configs are still accepted: `meshes` is read
 when `files` is absent, and `tckBudgetBytes` when `budgetBytes` is absent.
@@ -80,19 +81,24 @@ load or unload as they are ticked.
 ### Size budget
 
 If `size` is unknown or at most `budgetBytes`, the file loads in full. If it is
-larger and a `previewUrl` is given, the preview loads first and a **Load full**
+larger and a `previewUrl` is given, the preview loads first and the banner
+reads "Preview: N of M streamlines · Load full (size)", where N is the number of
+streamlines in the preview and M is the file entry's `streamlines` (without it,
+"Preview: N streamlines"). The **Load full**
 button (with a confirmation) replaces it with the whole file; if the full load
 fails, the preview stays. If it is larger and there is no preview, the viewer
 asks before loading, and shows a notice if you decline.
 
 ### Receiving the config
 
-If `window.config` (or the parent's, when same-origin) is set, it is used. A
+If the parent page's `window.config` can be read (same origin), it is used;
+otherwise the viewer's own `window.config`, if set. A
 viewer that is not in an iframe with no config falls back to the debug volume at
 once. Inside an iframe, the viewer posts `{type: 'niivue-ready'}` to its parent
 and waits up to 10 seconds for one `{type: 'niivue-config', config}` message,
-then falls back to the debug volume. The message is accepted only from the same
-origin, `https://brainlife.io` and its subdomains, and `http://localhost` or
+then falls back to the debug volume. The message must come from the parent
+window, and is accepted only from the same origin (never the opaque `null`),
+`https://brainlife.io` and its subdomains, and `http://localhost` or
 `http://127.0.0.1` with an explicit port. A host on another origin does:
 
 ```js
@@ -114,7 +120,8 @@ The host itself must be on an allowed origin for the viewer to accept it.
 - **Radius** (mm) sets tube thickness. **Stride** draws every Nth streamline.
   **Min length** (mm) hides shorter streamlines. **Opacity** is a slider.
 - **Groups**: a TRX file with groups gets a side list to show or hide each one,
-  with Show all and Hide all.
+  with Show all and Hide all. Streamlines that belong to no group are listed
+  as one more group, "Other streamlines".
 - **Clip** turns on a clip plane; the slider sets its depth.
 - **Screenshot** saves the view as `tracts.png`.
 - **View**, **Layout** and **EqualSize** change the slice and 3D arrangement.
