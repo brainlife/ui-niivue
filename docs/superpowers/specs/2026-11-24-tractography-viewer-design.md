@@ -140,6 +140,8 @@ uses `@niivue/zarrita-rs`.
 - **Upgrade NiiVue** from `1.0.0-rc.16` to the current 1.0 release candidate
   and drop `repairTckOffsets` once a test shows the first streamline
   survives.
+  In 1.0 the OME-Zarr loader moved to `@niivue/nv-ext-tile` (`/zarr`), so
+  the bundle adds it to keep `loadOmeZarrVolumes` working.
 
 ### NiiVue PRs (upstream, small, one concern each)
 
@@ -168,7 +170,7 @@ pass the real datatype once the viewer understands all of them.
 ### brainlife-lite
 
 For the five tract datatypes, `VisualizeDatatypeButton` opens this viewer in
-an iframe (it already iframes other viewers via `frame.path`) and sends the
+its existing visualizer modal (`viewerModal`), as an iframe (it already iframes other viewers via `frame.path`) and sends the
 config. `NiiVueViewer.tsx` drops only its tract-specific code
 (`niivueTracts.ts` and the tract routing); its general mesh path stays,
 because the `surfaces` and `tractview` UIs use it (*builder's call*).
