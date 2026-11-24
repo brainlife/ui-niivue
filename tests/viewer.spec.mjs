@@ -69,12 +69,12 @@ test('tract removal resolves shifting indices and radius stays visible', async (
   expect(await page.evaluate(() => window.testViewer.meshes.every(m => m.positions.length > 0 && m.tractOptions.fiberRadius > 0))).toBe(true);
   expect(await page.evaluate(() => window.testViewer.meshes.map(m => m.tractOptions.colorBy))).toEqual(['fixed', 'fixed']);
   await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.map(m => m.name))).toEqual(['right']);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.map(m => m.name))).toEqual(['right']);
   await page.locator('#fiberRadius').fill('0.5');
   await page.locator('#fiberRadius').dispatchEvent('change');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.5);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].tractOptions.fiberRadius)).toBe(0.5);
   await page.click('#tractClearAll');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(0);
   expect(errors).toEqual([]);
 });
 
@@ -84,13 +84,13 @@ test('CSD MZ3 glyphs retain colors and update/toggle without mesh leaks', async 
   expect(await page.evaluate(() => { const m=window.testViewer.meshes[0]; return m.positions.length > 0 && new Set(m.perVertexColors).size > 10; })).toBe(true);
   await page.evaluate(() => window.testViewer.setCrosshairPos([2,3,4]));
   await expect(page.locator('#csd-status')).toHaveText(/\d+ glyphs/);
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   await page.screenshot({ path: 'test-results/csd-glyphs.png' });
   await page.uncheck('#csd-visible');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(0);
   await page.check('#csd-visible');
   await expect(page.locator('#csd-status')).toHaveText(/\d+ glyphs/);
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   expect(errors).toEqual([]);
 });
 
@@ -132,7 +132,7 @@ test('single tract ignores a supplied fixed color', async ({ page }) => {
 
 test('TCK keeps its first streamline', async ({ page }) => {
   const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [{ url: '/fixture/two.tck', name: 'two' }] });
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(3);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0]?.trx?.offsets.length)).toBe(3);
   expect(await page.evaluate(() => Array.from(window.testViewer.meshes[0].trx.offsets))).toEqual([0, 3, 6]);
   expect(errors).toEqual([]);
 });
@@ -140,7 +140,7 @@ test('TCK keeps its first streamline', async ({ page }) => {
 for (const [datatype, file] of [['neuro/track/tck', 'tracts.tck'], ['neuro/track/trk', 'tracts.trk'], ['neuro/track/trx', 'tracts.trx']])
   test(`${datatype} loads all three streamlines`, async ({ page }) => {
     const errors = await openViewer(page, { datatype, files: [{ url: '/fixture/' + file, name: file }] });
-    await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(4);
+    await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0]?.trx?.offsets.length)).toBe(4);
     expect(await page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
     expect(await page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.1);
     expect(errors).toEqual([]);
@@ -148,7 +148,7 @@ for (const [datatype, file] of [['neuro/track/tck', 'tracts.tck'], ['neuro/track
 
 test('TRX groups and scalars are read', async ({ page }) => {
   const errors = await openViewer(page, { datatype: 'neuro/track/trx', files: [{ url: '/fixture/tracts.trx', name: 'tracts.trx' }] });
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(4);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0]?.trx?.offsets.length)).toBe(4);
   expect(await page.evaluate(() => Object.keys(window.testViewer.meshes[0].trx.groups))).toEqual(['AF_L', 'CST_R']);
   expect(await page.evaluate(() => 'FA' in window.testViewer.meshes[0].trx.dpv)).toBe(true);
   expect(errors).toEqual([]);
@@ -172,10 +172,10 @@ test('TRX group list filters streamlines by group', async ({ page }) => {
   await page.locator('.tract-row').filter({ hasText: 'CST_R' }).locator('input').uncheck();
   await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L']);
   await page.click('#tractClearAll');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].visible)).toBe(false);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(false);
   await page.click('#tractSelectAll');
   await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L', 'CST_R']);
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].visible)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].visible)).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -192,13 +192,13 @@ test('scalar colouring prefills the range from the file', async ({ page }) => {
 
 test('min length, stride and opacity reach the mesh', async ({ page }) => {
   const errors = await openViewer(page, trxConfig('tracts.trx'));
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   await change(page, '#fiberMinLength', '10');
   await expect.poll(async () => (await options(page)).minLength).toBe(10);
   await change(page, '#fiberDecimation', '2');
   await expect.poll(async () => (await options(page)).decimation).toBe(2);
   await change(page, '#fiberOpacity', '0.5');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].opacity)).toBe(0.5);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes[0].opacity)).toBe(0.5);
   expect(errors).toEqual([]);
 });
 
@@ -206,14 +206,14 @@ test('controls changed while the file loads are applied when it arrives', async 
   await page.route('**/fixture/tracts.trx', async route => { await new Promise(r => setTimeout(r, 800)); await route.fallback(); });
   const errors = await openViewer(page, trxConfig('tracts.trx'));
   await change(page, '#fiberMinLength', '7');
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   await expect.poll(async () => (await options(page)).minLength).toBe(7);
   expect(errors).toEqual([]);
 });
 
 test('a TRX without groups shows no group panel and bundle colour is fixed', async ({ page }) => {
   const errors = await openViewer(page, trxConfig('nogroups.trx'));
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
   await expect(page.locator('#tractPanel')).toBeHidden();
   expect(await page.inputValue('#fiberColor')).toBe('global');
   await page.selectOption('#fiberColor', 'bundle');
@@ -242,10 +242,86 @@ test('removing a bundle while an apply is in flight does not write to the wrong 
   });
   await page.evaluate(() => { const el = document.getElementById('fiberOpacity'); el.value = '0.3'; el.dispatchEvent(new Event('change')); });
   await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
-  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.map(m => m.name))).toEqual(['right']);
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.map(m => m.name))).toEqual(['right']);
   await page.evaluate(() => window.releaseGate());
   await expect.poll(() => page.evaluate(() => window.setMeshCalls.length)).toBeGreaterThan(0);
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => window.setMeshCalls)).toEqual(['right']);
+  expect(errors).toEqual([]);
+});
+
+test('tract mode opens on multiplanar + 3D and single-slice views hide the render', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  expect(await page.evaluate(() => [window.testViewer.sliceType, window.testViewer.showRender])).toEqual([3, 1]);
+  expect(await page.inputValue('#sliceType')).toBe('combined');
+  for (const [view, type] of [['axial', 0], ['coronal', 1], ['sagittal', 2]]) {
+    await page.selectOption('#sliceType', view);
+    expect(await page.evaluate(() => [window.testViewer.sliceType, window.testViewer.showRender])).toEqual([type, 0]);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('the volume viewer still starts on 3D only', async ({ page }) => {
+  await openViewer(page, { datatype: 'neuro/mask', path: '/fixture/mask.nii', name: 'mask.nii' });
+  await expect.poll(() => page.evaluate(() => window.testViewer?.volumes.length)).toBe(1);
+  expect(await page.evaluate(() => window.testViewer.sliceType)).toBe(4);
+  expect(await page.inputValue('#sliceType')).toBe('3d');
+});
+
+test('the axial tile draws tracts without a background volume', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  await page.selectOption('#sliceType', 'axial');
+  await page.waitForTimeout(500);
+  // Compare the tile with the tracts shown against the same view with them hidden
+  // (the empty-background rendering), counting pixels that differ.
+  const shown = (await page.locator('#gl1').screenshot()).toString('base64');
+  await page.evaluate(() => { window.testViewer.setMesh(0, { visible: false }); });
+  await page.waitForTimeout(500);
+  const hidden = (await page.locator('#gl1').screenshot()).toString('base64');
+  const differing = await page.evaluate(async ([a, b]) => {
+    const read = async b64 => {
+      const bmp = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob());
+      const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d');
+      ctx.drawImage(bmp, 0, 0);
+      return ctx.getImageData(0, 0, bmp.width, bmp.height).data;
+    };
+    const [x, y] = [await read(a), await read(b)];
+    let count = 0;
+    for (let i = 0; i < x.length; i += 4) if (Math.abs(x[i]-y[i]) + Math.abs(x[i+1]-y[i+1]) + Math.abs(x[i+2]-y[i+2]) > 60) count++;
+    return count;
+  }, [shown, hidden]);
+  console.log('pixels drawn by the tracts in the axial tile:', differing);
+  expect(differing).toBeGreaterThan(50);
+  expect(errors).toEqual([]);
+});
+
+test('a background volume loads before the tracts', async ({ page }) => {
+  const errors = await openViewer(page, { ...trxConfig('tracts.trx'), background: { url: '/fixture/mask.nii', name: 'mask.nii' } });
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  expect(await page.evaluate(() => window.testViewer.volumes.length)).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('the clip plane follows its slider and can be switched off', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  await page.locator('#clipDepth').fill('0.4');
+  await page.check('#clipCheck');
+  await expect.poll(() => page.evaluate(() => window.testViewer.getClipPlaneDepthAziElev()[0])).toBeCloseTo(0.4, 5);
+  await page.locator('#clipDepth').fill('-0.3');
+  await expect.poll(() => page.evaluate(() => window.testViewer.getClipPlaneDepthAziElev()[0])).toBeCloseTo(-0.3, 5);
+  await page.uncheck('#clipCheck');
+  await expect.poll(() => page.evaluate(() => window.testViewer.getClipPlaneDepthAziElev()[0])).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test('the screenshot button downloads tracts.png', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer?.meshes.length)).toBe(1);
+  const download = page.waitForEvent('download');
+  await page.click('#screenshotBtn');
+  expect((await download).suggestedFilename()).toBe('tracts.png');
   expect(errors).toEqual([]);
 });

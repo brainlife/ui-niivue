@@ -21,6 +21,10 @@ export async function startTractViewer(nv, meshLoader, config) {
     ensureBanner().textContent = "Zarr Vectors support is coming";
     return;
   }
+  setupViewControls(nv);
+  if (config.background?.url) {
+    await nv.loadVolumes([{ url: config.background.url, name: config.background.name, colormap: "gray" }]);
+  }
   const legacy = config.datatype === "neuro/tcks" || (config.datatype === "neuro/track/tck" && !config.files);
   if (legacy) {
     // nifti.vue enumerates every .tck file and passes a colored mesh per file.
@@ -236,6 +240,21 @@ function injectTractStyles() {
     .tract-size { color:#888; flex:0 0 auto; }
   `;
   document.head.appendChild(style);
+}
+
+// Clip plane and screenshot. A depth of 2 lies outside the volume, which disables the plane.
+function setupViewControls(nv) {
+  const clipCheck = document.getElementById("clipCheck");
+  const clipDepth = document.getElementById("clipDepth");
+  const screenshot = document.getElementById("screenshotBtn");
+  document.getElementById("tractViewControls").hidden = false;
+  const applyClip = () => {
+    if (clipCheck.checked) nv.setClipPlaneDepthAziElev(Number(clipDepth.value), 270, 0);
+    else nv.setClipPlaneDepthAziElev(2, 0, 0);
+  };
+  clipCheck.addEventListener("change", applyClip);
+  clipDepth.addEventListener("input", applyClip);
+  screenshot.addEventListener("click", () => nv.saveBitmap("tracts.png"));
 }
 
 const byId = id => document.getElementById(id);

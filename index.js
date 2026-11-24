@@ -8,11 +8,24 @@ import { startTractViewer } from "./tract-viewer.js";
 
 const debugConfig = { path: "../images/mni152.nii.gz" };
 
+const SINGLE_SLICE = {
+  axial: niivue.SLICE_TYPE.AXIAL,
+  coronal: niivue.SLICE_TYPE.CORONAL,
+  sagittal: niivue.SLICE_TYPE.SAGITTAL,
+};
+function viewSettings(mode) {
+  if (mode in SINGLE_SLICE) return { sliceType: SINGLE_SLICE[mode], showRender: niivue.SHOW_RENDER.NEVER };
+  return {
+    sliceType: mode === "3d" ? niivue.SLICE_TYPE.RENDER : niivue.SLICE_TYPE.MULTIPLANAR,
+    showRender: mode === "slices" ? niivue.SHOW_RENDER.NEVER : niivue.SHOW_RENDER.ALWAYS,
+  };
+}
+
 const drop = document.getElementById("sliceType");
 drop.onchange = function () {
-  const mode = drop.value;
-  nv1.showRender = mode === "slices" ? niivue.SHOW_RENDER.NEVER : niivue.SHOW_RENDER.ALWAYS;
-  nv1.sliceType = mode === "3d" ? niivue.SLICE_TYPE.RENDER : niivue.SLICE_TYPE.MULTIPLANAR;
+  const { sliceType, showRender } = viewSettings(drop.value);
+  nv1.showRender = showRender;
+  nv1.sliceType = sliceType;
   nv1.resize();
 };
 
@@ -47,6 +60,9 @@ nv1.volumeIsNearestInterpolation = config.datatype === "neuro/mask";
 await nv1.attachTo("gl1");
 
 if (isTractDatatype(config.datatype)) {
+  // Tracts are easiest to read with slices for context next to the 3D render.
+  drop.value = "combined";
+  drop.onchange();
   await startTractViewer(nv1, meshLoader, config);
 } else {
   await nv1.loadVolumes([volumeOptions(config)]);
