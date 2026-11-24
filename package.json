@@ -20,7 +20,8 @@
   },
   "homepage": "https://github.com/brainlife/ui-niivue#readme",
   "dependencies": {
-    "@niivue/niivue": "1.0.0-rc.16"
+    "@niivue/niivue": "1.0.0-rc.238",
+    "@niivue/nv-ext-tile": "1.0.0-rc.147"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
