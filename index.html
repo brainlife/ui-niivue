@@ -94,20 +94,14 @@
 </head>
 <body>
   <header>
-    <label for="fiberRadius">Radius</label>
-    <input type="range" min="1" max="20" value="1" class="slider" id="fiberRadius" />
-    
-    <label for="fiberDecimation">Stride</label>
-    <input type="range" min="1" max="10" value="1" class="slider" id="fiberDecimation" />
-    
-    <label for="fiberColor">Fiber color</label>
+    <label for="fiberColor">Colour</label>
     <select id="fiberColor">
-      <option value="Global">Global direction</option>
-      <option value="Local">Local direction</option>
-      <option value="Fixed">Fixed</option>
-      <option value="DPV0" selected>First Per Vertex Type (if available)</option>
+      <option value="global">Global direction</option>
+      <option value="local">Local direction</option>
+      <option value="bundle">Bundle colour</option>
+      <option value="fixed">Fixed colour</option>
     </select>
-    
+
     <label for="fiberColormap">Colormap</label>
     <select id="fiberColormap">
       <option value="actc">ACTC</option>
@@ -116,10 +110,24 @@
       <option value="warm">Warm</option>
       <option value="winter">Winter</option>
     </select>
-    
-    <label for="fiberCalMin">Color Minimum</label>
-    <input type="range" min="10" max="75" value="25" class="slider" id="fiberCalMin" />
-    
+
+    <label for="fiberCalMin">Min</label>
+    <input type="number" step="any" id="fiberCalMin" style="width:5.5em" />
+    <label for="fiberCalMax">Max</label>
+    <input type="number" step="any" id="fiberCalMax" style="width:5.5em" />
+
+    <label for="fiberRadius">Radius (mm)</label>
+    <input type="number" min="0.05" max="2" step="0.05" value="0.1" id="fiberRadius" style="width:4.5em" />
+
+    <label for="fiberDecimation">Stride</label>
+    <input type="number" min="1" max="20" step="1" value="1" id="fiberDecimation" style="width:3.5em" />
+
+    <label for="fiberMinLength">Min length (mm)</label>
+    <input type="number" min="0" max="200" step="1" value="0" id="fiberMinLength" style="width:4.5em" />
+
+    <label for="fiberOpacity">Opacity</label>
+    <input type="range" min="0.1" max="1" step="0.05" value="1" class="slider" id="fiberOpacity" />
+
     <label for="layoutSelect">Layout</label>
     <select id="layoutSelect">
       <option value="0" selected>Auto</option>

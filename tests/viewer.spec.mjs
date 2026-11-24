@@ -35,7 +35,7 @@ async function openViewer(page, config) {
   await page.route('**/fixture/**', route => {
     const url = route.request().url();
     const body = url.endsWith('tracts.tck') ? tckBytes(STREAMLINES) : url.endsWith('tracts.trk') ? trkBytes(STREAMLINES) :
-      url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : null;
+      url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : url.endsWith('nogroups.trx') ? trxBytes(STREAMLINES) : null;
     if (body) return route.fulfill({ contentType: 'application/octet-stream', body });
     return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('two.tck') ? tract(0, twoStreamlines) : url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
   });
@@ -70,7 +70,7 @@ test('tract removal resolves shifting indices and radius stays visible', async (
   expect(await page.evaluate(() => window.testViewer.meshes.map(m => m.tractOptions.colorBy))).toEqual(['fixed', 'fixed']);
   await page.locator('.tract-row').filter({ hasText: 'left' }).locator('input').uncheck();
   await expect.poll(() => page.evaluate(() => window.testViewer.meshes.map(m => m.name))).toEqual(['right']);
-  await page.locator('#fiberRadius').fill('5');
+  await page.locator('#fiberRadius').fill('0.5');
   await page.locator('#fiberRadius').dispatchEvent('change');
   await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.5);
   await page.click('#tractClearAll');
@@ -158,5 +158,66 @@ test('zarr-vectors says it is coming and loads nothing', async ({ page }) => {
   const errors = await openViewer(page, { datatype: 'neuro/track/zarr-vectors', files: [{ url: '/fixture/tracts.zarr', name: 'tracts.zarr' }] });
   await expect(page.getByRole('status').filter({ hasText: 'Zarr Vectors support is coming' })).toBeVisible();
   expect(await page.evaluate(() => window.testViewer.meshes.length)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+const change = (page, selector, value) => page.locator(selector).fill(value).then(() => page.locator(selector).dispatchEvent('change'));
+const trxConfig = file => ({ datatype: 'neuro/track/trx', files: [{ url: '/fixture/' + file, name: file }] });
+const options = page => page.evaluate(() => window.testViewer.meshes[0].tractOptions);
+
+test('TRX group list filters streamlines by group', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect(page.locator('#tractPanel .tract-row')).toHaveText([/AF_L/, /CST_R/]);
+  expect((await options(page)).groupColors).not.toBeNull();
+  await page.locator('.tract-row').filter({ hasText: 'CST_R' }).locator('input').uncheck();
+  await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L']);
+  await page.click('#tractClearAll');
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].visible)).toBe(false);
+  await page.click('#tractSelectAll');
+  await expect.poll(async () => (await options(page)).visibleGroups).toEqual(['AF_L', 'CST_R']);
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].visible)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('scalar colouring prefills the range from the file', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect(page.locator('#fiberColor option[value="dpv:FA"]')).toHaveText('FA (per point)');
+  await page.selectOption('#fiberColor', 'dpv:FA');
+  await expect.poll(async () => (await options(page)).colorBy).toBe('dpv:FA');
+  expect(Number(await page.inputValue('#fiberCalMin'))).toBeCloseTo(0.1, 5);
+  expect(Number(await page.inputValue('#fiberCalMax'))).toBeCloseTo(0.9, 5);
+  await expect.poll(async () => (await options(page)).calMax).toBeCloseTo(0.9, 5);
+  expect(errors).toEqual([]);
+});
+
+test('min length, stride and opacity reach the mesh', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await change(page, '#fiberMinLength', '10');
+  await expect.poll(async () => (await options(page)).minLength).toBe(10);
+  await change(page, '#fiberDecimation', '2');
+  await expect.poll(async () => (await options(page)).decimation).toBe(2);
+  await change(page, '#fiberOpacity', '0.5');
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0].opacity)).toBe(0.5);
+  expect(errors).toEqual([]);
+});
+
+test('controls changed while the file loads are applied when it arrives', async ({ page }) => {
+  await page.route('**/fixture/tracts.trx', async route => { await new Promise(r => setTimeout(r, 800)); await route.fallback(); });
+  const errors = await openViewer(page, trxConfig('tracts.trx'));
+  await change(page, '#fiberMinLength', '7');
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect.poll(async () => (await options(page)).minLength).toBe(7);
+  expect(errors).toEqual([]);
+});
+
+test('a TRX without groups shows no group panel and bundle colour is fixed', async ({ page }) => {
+  const errors = await openViewer(page, trxConfig('nogroups.trx'));
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+  await expect(page.locator('#tractPanel')).toBeHidden();
+  expect(await page.inputValue('#fiberColor')).toBe('global');
+  await page.selectOption('#fiberColor', 'bundle');
+  await expect.poll(async () => (await options(page)).colorBy).toBe('fixed');
+  expect((await options(page)).groupColors).toBeNull();
   expect(errors).toEqual([]);
 });
