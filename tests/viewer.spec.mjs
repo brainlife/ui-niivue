@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { STREAMLINES, tckBytes, trkBytes, trxBytes } from './fixtures.mjs';
+
+const trxOptions = { groups: { AF_L: [0, 1], CST_R: [2] }, dpv: { FA: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] } };
 
 // Small deterministic, world-aligned NIfTI and TCK fixtures.
 function nifti(frames = 1) {
@@ -17,12 +20,7 @@ function nifti(frames = 1) {
   return bytes;
 }
 function tract(offset, streamlines) {
-  streamlines ||= [[[0, offset, 0], [3, offset + 1, 3], [7, offset, 7]]];
-  const points = streamlines.flatMap(line => [...line, [NaN, NaN, NaN]]).concat([[Infinity, Infinity, Infinity]]);
-  const bytes = Buffer.alloc(1000 + points.length * 3 * 4);
-  bytes.write(`mrtrix tracks\ncount: ${streamlines.length}\ndatatype: Float32LE\nfile: . 1000\nEND\n`);
-  points.flat().forEach((v, i) => bytes.writeFloatLE(v, 1000 + i * 4));
-  return bytes;
+  return tckBytes(streamlines || [[[0, offset, 0], [3, offset + 1, 3], [7, offset, 7]]]);
 }
 const twoStreamlines = [[[0, 0, 0], [1, 1, 1], [2, 2, 2]], [[5, 5, 5], [6, 6, 6], [7, 7, 7]]];
 async function openViewer(page, config) {
@@ -36,6 +34,9 @@ async function openViewer(page, config) {
   });
   await page.route('**/fixture/**', route => {
     const url = route.request().url();
+    const body = url.endsWith('tracts.tck') ? tckBytes(STREAMLINES) : url.endsWith('tracts.trk') ? trkBytes(STREAMLINES) :
+      url.endsWith('tracts.trx') ? trxBytes(STREAMLINES, trxOptions) : null;
+    if (body) return route.fulfill({ contentType: 'application/octet-stream', body });
     return route.fulfill({ contentType: 'application/octet-stream', body: url.endsWith('two.tck') ? tract(0, twoStreamlines) : url.endsWith('.tck') ? tract(url.includes('right') ? 3 : 1) : nifti(url.includes('csd') ? 6 : 1) });
   });
   await page.goto('/');
@@ -133,5 +134,29 @@ test('TCK keeps its first streamline', async ({ page }) => {
   const errors = await openViewer(page, { datatype: 'neuro/tcks', meshes: [{ url: '/fixture/two.tck', name: 'two' }] });
   await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(3);
   expect(await page.evaluate(() => Array.from(window.testViewer.meshes[0].trx.offsets))).toEqual([0, 3, 6]);
+  expect(errors).toEqual([]);
+});
+
+for (const [datatype, file] of [['neuro/track/tck', 'tracts.tck'], ['neuro/track/trk', 'tracts.trk'], ['neuro/track/trx', 'tracts.trx']])
+  test(`${datatype} loads all three streamlines`, async ({ page }) => {
+    const errors = await openViewer(page, { datatype, files: [{ url: '/fixture/' + file, name: file }] });
+    await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(4);
+    expect(await page.evaluate(() => window.testViewer.meshes.length)).toBe(1);
+    expect(await page.evaluate(() => window.testViewer.meshes[0].tractOptions.fiberRadius)).toBe(0.1);
+    expect(errors).toEqual([]);
+  });
+
+test('TRX groups and scalars are read', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/track/trx', files: [{ url: '/fixture/tracts.trx', name: 'tracts.trx' }] });
+  await expect.poll(() => page.evaluate(() => window.testViewer.meshes[0]?.trx?.offsets.length)).toBe(4);
+  expect(await page.evaluate(() => Object.keys(window.testViewer.meshes[0].trx.groups))).toEqual(['AF_L', 'CST_R']);
+  expect(await page.evaluate(() => 'FA' in window.testViewer.meshes[0].trx.dpv)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('zarr-vectors says it is coming and loads nothing', async ({ page }) => {
+  const errors = await openViewer(page, { datatype: 'neuro/track/zarr-vectors', files: [{ url: '/fixture/tracts.zarr', name: 'tracts.zarr' }] });
+  await expect(page.getByRole('status').filter({ hasText: 'Zarr Vectors support is coming' })).toBeVisible();
+  expect(await page.evaluate(() => window.testViewer.meshes.length)).toBe(0);
   expect(errors).toEqual([]);
 });
